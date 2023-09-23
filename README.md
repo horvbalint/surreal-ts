@@ -20,7 +20,7 @@ Alternatively one can also clone this repository and build it for themself with 
 
 ## Output
 The generated file will contain two version for every table found in the database. One of them is prefixed with `In` (eg.: InUser), while the other one is prefixed with `Out` (eg.: OutUser).
-In* should be used for every action where you are sending data to the database and Out* should be used for the responses from the Database.
+In* should be used for every action where you are sending data to the database and Out* should be used for the responses from the database.
 
 ## Disclaimer
 This project was created as an experiment, and while it works for my usecase it might not work for everyone. I do not take responsibility for problems that might occure due to using this software.

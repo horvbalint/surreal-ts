@@ -44,7 +44,7 @@ struct CliArgs {
     database: String,
 
     /// The path where the typescript defintion file will be generated
-    #[arg(short, long)]
+    #[arg(short, long, default_value_t = String::from("tables.d.ts"))]
     output: String,
 }
 
@@ -96,6 +96,8 @@ impl Generator {
 
     pub async fn generate(&mut self, file: &mut File) -> anyhow::Result<()> {
         println!("\nGenerator warming up...\n");
+
+        write!(file, "type SurrealRecord = Record<string, unknown>\n\n")?;
 
         let info: Option<DatabaseInfo> = self.db
             .query("INFO FOR DB")
@@ -163,7 +165,7 @@ impl Generator {
 
     fn write_table(&mut self, file: &mut File, name: &str, from_db: bool) -> anyhow::Result<()> {
         let interface_name = Self::create_interface_name(name, from_db);
-        write!(file, "export interface {interface_name} ")?;
+        write!(file, "export interface {interface_name} extends SurrealRecord ")?;
 
         let fields = self.tables.get_mut(name).unwrap();
         fields.insert("id".to_string(), Field {
