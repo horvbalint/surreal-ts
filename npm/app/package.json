@@ -8,11 +8,11 @@
     "dev": "node src/index.js"
   },
   "optionalDependencies": {
-    "app-linux-x64": "0.1.0",
-    "app-linux-arm64": "0.1.0",
-    "app-darwin-x64": "0.1.0",
-    "app-darwin-arm64": "0.1.0",
-    "app-windows-x64": "0.1.0",
-    "app-windows-arm64": "0.1.0"
+    "surreal-ts-linux-x64": "0.1.0",
+    "surreal-ts-linux-arm64": "0.1.0",
+    "surreal-ts-darwin-x64": "0.1.0",
+    "surreal-ts-darwin-arm64": "0.1.0",
+    "surreal-ts-windows-x64": "0.1.0",
+    "surreal-ts-windows-arm64": "0.1.0"
   }
 }
