@@ -237,6 +237,10 @@ impl Generator {
             } else {
                 "Date | string".to_string()
             }
+        } else if name == "bool" {
+            "boolean".to_string()
+        } else if name == "decimal" || name == "float" || name == "int" {
+            "number".to_string()
         } else {
             name.to_string()
         };
@@ -322,6 +326,11 @@ impl Field {
         }
 
         let (input, inner) = opt(delimited(tag("array<"), Self::parse_type, tag(">")))(input)?;
+        if let Some(props) = inner {
+            return Ok((input, FieldProps {is_array: true, ..props}));
+        }
+
+        let (input, inner) = opt(delimited(tag("set<"), Self::parse_type, tag(">")))(input)?;
         if let Some(props) = inner {
             return Ok((input, FieldProps {is_array: true, ..props}));
         }
