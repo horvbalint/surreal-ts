@@ -44,7 +44,7 @@ struct CliArgs {
     database: String,
 
     /// The path where the typescript defintion file will be generated
-    #[arg(short, long, default_value_t = String::from("tables.d.ts"))]
+    #[arg(short, long, default_value_t = String::from("db.d.ts"))]
     output: String,
 }
 
@@ -97,7 +97,7 @@ impl Generator {
     pub async fn generate(&mut self, file: &mut File) -> anyhow::Result<()> {
         println!("\nGenerator warming up...\n");
 
-        write!(file, "type SurrealRecord = Record<string, unknown>\n\n")?;
+        write!(file, "type SurrealRecord = Record<PropertyKey, unknown>\n\n")?;
 
         let info: Option<DatabaseInfo> = self.db
             .query("INFO FOR DB")
