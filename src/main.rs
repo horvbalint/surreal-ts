@@ -95,6 +95,8 @@ impl Generator {
     }
 
     pub async fn generate(&mut self, file: &mut File) -> anyhow::Result<()> {
+        println!("\nGenerator warming up...\n");
+
         let info: Option<DatabaseInfo> = self.db
             .query("INFO FOR DB")
             .await?
@@ -105,6 +107,8 @@ impl Generator {
         for name in info.tables.keys().sorted() {
             self.process_table(file, name).await?
         }
+
+        println!("\nTypes successfully generated ✅");
 
         Ok(())
     }
@@ -220,7 +224,13 @@ impl Generator {
 
     fn write_type(file: &mut File, name: &String, is_record: bool, from_db: bool) -> anyhow::Result<()> {
         let name = if is_record {
-            Self::create_interface_name(name, from_db)
+            let ref_name = Self::create_interface_name(name, from_db);
+
+            if from_db {
+                format!("{ref_name}['id'] | {ref_name}")
+            } else {
+                format!("Required<{ref_name}>['id']")
+            }
         } else if name == "datetime" {
             if from_db {
                 "string".to_string()
