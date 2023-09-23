@@ -1,5 +1,5 @@
 # Surreal-ts
-Surreal-ts is a simple to use typescript interface genearator for SurrealDB databases.
+Surreal-ts is a simple to use typescript type definition generator for SurrealDB databases.
 
 ## Features
 - Many supported field types and properties:
@@ -12,7 +12,7 @@ Surreal-ts is a simple to use typescript interface genearator for SurrealDB data
 
 
 ## Usage
-Surreal-ts is written in Rust, but it is also published on npm, so it can be easily installed/started with: ```npx surreal-ts```.
+Surreal-ts is a CLI tool written in Rust, but it is also published on npm, so it can be easily installed/started with: ```npx surreal-ts```.
 
 If you want to always get the latest version, use: ```npx surreal-ts@latest```.
 
