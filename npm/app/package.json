@@ -12,7 +12,6 @@
     "surreal-ts-linux-arm64": "0.1.0",
     "surreal-ts-darwin-x64": "0.1.0",
     "surreal-ts-darwin-arm64": "0.1.0",
-    "surreal-ts-windows-x64": "0.1.0",
-    "surreal-ts-windows-arm64": "0.1.0"
+    "surreal-ts-windows-x64": "0.1.0"
   }
 }
