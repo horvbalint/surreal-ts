@@ -12,7 +12,9 @@ Surreal-ts is a simple to use typescript interface genearator for SurrealDB data
 
 
 ## Usage
-Surreal-ts is written in Rust, but it is also published on npm, so it can be easily installed/started with: ```npx surreal-ts```
+Surreal-ts is written in Rust, but it is also published on npm, so it can be easily installed/started with: ```npx surreal-ts```.
+
+If you want to always get the latest version, use: ```npx surreal-ts@latest```.
 
 Alternatively one can also clone this repository and build it for themself with ```cargo build```.
 

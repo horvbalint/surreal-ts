@@ -97,8 +97,6 @@ impl Generator {
     pub async fn generate(&mut self, file: &mut File) -> anyhow::Result<()> {
         println!("\nGenerator warming up...\n");
 
-        write!(file, "type SurrealRecord = Record<PropertyKey, unknown>\n\n")?;
-
         let info: Option<DatabaseInfo> = self.db
             .query("INFO FOR DB")
             .await?
@@ -165,7 +163,7 @@ impl Generator {
 
     fn write_table(&mut self, file: &mut File, name: &str, from_db: bool) -> anyhow::Result<()> {
         let interface_name = Self::create_interface_name(name, from_db);
-        write!(file, "export interface {interface_name} extends SurrealRecord ")?;
+        write!(file, "export type {interface_name} = ")?;
 
         let fields = self.tables.get_mut(name).unwrap();
         fields.insert("id".to_string(), Field {
