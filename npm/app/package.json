@@ -1,0 +1,18 @@
+{
+  "name": "surreal-ts",
+  "version": "0.1.0",
+  "bin": "src/index.js",
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "dev": "node src/index.js"
+  },
+  "optionalDependencies": {
+    "app-linux-x64": "0.1.0",
+    "app-linux-arm64": "0.1.0",
+    "app-darwin-x64": "0.1.0",
+    "app-darwin-arm64": "0.1.0",
+    "app-windows-x64": "0.1.0",
+    "app-windows-arm64": "0.1.0"
+  }
+}
