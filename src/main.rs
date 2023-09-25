@@ -3,8 +3,11 @@ use std::fs::File;
 use std::io::Write;
 
 use clap::Parser;
+use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::alpha1;
+use nom::combinator::rest;
+use nom::sequence::pair;
 use nom::{
     bytes::complete::{is_not, take_until1},
     combinator::opt,
@@ -18,6 +21,7 @@ use surrealdb::{
     Surreal,
 };
 use itertools::Itertools;
+use convert_case::{Case, Casing};
 
 /// A simple typescript definition generator for SurrealDB
 #[derive(Parser, Debug)]
@@ -135,7 +139,7 @@ impl Generator {
         Ok(())
     }
 
-    fn process_field(tree: &mut Fields, path: &String, definition: &String) -> anyhow::Result<()> {
+    fn process_field(tree: &mut Fields, path: &str, definition: &str) -> anyhow::Result<()> {
         let field = Field::from(&definition)?;
         Self::add_to_tree(tree, path.split('.'), field);
 
@@ -182,15 +186,19 @@ impl Generator {
     }
 
     fn write_object(file: &mut File, fields: &Fields, from_db: bool, depth: usize) -> anyhow::Result<()> {
-        write!(file, "{{\n")?;
-
-        let indentation = "\t".repeat(depth);
-        for key in fields.keys().sorted() {
-            write!(file, "{indentation}\t{key}")?;
-            Self::write_field(file, &fields[key], from_db, depth)?;
+        if fields.len() == 0 {
+            write!(file, "object")?;
+        } else {
+            write!(file, "{{\n")?;
+    
+            let indentation = "\t".repeat(depth);
+            for key in fields.keys().sorted() {
+                write!(file, "{indentation}\t{key}")?;
+                Self::write_field(file, &fields[key], from_db, depth)?;
+            }
+    
+            write!(file, "{indentation}}}")?;
         }
-
-        write!(file, "{indentation}}}")?;
         Ok(())
     }
 
@@ -241,6 +249,10 @@ impl Generator {
             "boolean".to_string()
         } else if name == "decimal" || name == "float" || name == "int" {
             "number".to_string()
+        } else if name == "duration" || name == "geometry" {
+            "string".to_string()
+        } else if name == "array" || name == "set" { // we get here when array or set is used without generic type parameter
+            "[]".to_string()
         } else {
             name.to_string()
         };
@@ -250,16 +262,12 @@ impl Generator {
     }
 
     fn create_interface_name(name: &str, from_db: bool) -> String {
-        let mut chars = name.chars();
-        let capitilzed_name = match chars.next() {
-            None => String::new(),
-            Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
-        };
+        let pascal_case_name = name.to_case(Case::Pascal);
     
         if from_db {
-            format!("Out{capitilzed_name}")
+            format!("Out{pascal_case_name}")
         } else {
-            format!("In{capitilzed_name}")
+            format!("In{pascal_case_name}")
         }
     }
 }
@@ -280,6 +288,7 @@ enum FieldPayload {
     SubFields(Fields),
 }
 
+#[derive(Debug)]
 struct FieldProps<'a> {
     is_optional: bool,
     is_array: bool,
@@ -314,7 +323,7 @@ impl Field {
     fn parse_type_from_definition(input: &str) -> IResult<&str, &str> {
         let (input, _) = take_until1("TYPE")(input)?;
         let (input, _) = tag("TYPE ")(input)?;
-        let (input, raw_type) = is_not(" ")(input)?;
+        let (input, raw_type) = alt((take_until1("DEFAULT"), take_until1("VALUE"), take_until1("ASSERT"), take_until1("PERMISSIONS"), rest))(input)?;
 
         Ok((input, raw_type))
     }
@@ -325,13 +334,13 @@ impl Field {
             return Ok((input, FieldProps {is_optional: true, ..props}));
         }
 
-        let (input, inner) = opt(delimited(tag("array<"), Self::parse_type, tag(">")))(input)?;
-        if let Some(props) = inner {
+        let (input, inner) = opt(delimited(tag("array<"), pair(Self::parse_type, opt(is_not(">"))), tag(">")))(input)?;
+        if let Some((props, _)) = inner {
             return Ok((input, FieldProps {is_array: true, ..props}));
         }
 
-        let (input, inner) = opt(delimited(tag("set<"), Self::parse_type, tag(">")))(input)?;
-        if let Some(props) = inner {
+        let (input, inner) = opt(delimited(tag("set<"), pair(Self::parse_type, opt(is_not(">"))), tag(">")))(input)?;
+        if let Some((props, _)) = inner {
             return Ok((input, FieldProps {is_array: true, ..props}));
         }
         
