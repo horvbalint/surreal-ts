@@ -5,6 +5,7 @@
   "description": "A simple to use typescript interface genearator for SurrealDB databases.",
   "keywords": ["SurrealDB", "typescript", "surql", "surreal", "generator", "interface"],
   "homepage": "https://github.com/horvbalint/surreal-ts",
+  "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/horvbalint/surreal-ts.git"
