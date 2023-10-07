@@ -32,7 +32,7 @@ use nom::{
 };
 use serde::Deserialize;
 use surrealdb::{
-    engine::remote::ws::{Client, Ws},
+    engine::remote::ws::{Client, Ws, Wss},
     opt::auth::Root,
     Surreal,
 };
@@ -71,7 +71,12 @@ struct CliArgs {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
-    let db = Surreal::new::<Ws>(&args.connection_url).await?;
+
+    let db = if args.connection_url.starts_with("https://") {
+        Surreal::new::<Wss>(&args.connection_url.replace("https://", "")).await?
+    } else {
+        Surreal::new::<Ws>(&args.connection_url).await?
+    };
 
     db.signin(Root {
         username: &args.username,
