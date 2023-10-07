@@ -30,7 +30,7 @@ use nom::{
 };
 use serde::Deserialize;
 use surrealdb::{
-    engine::remote::ws::{Client, Ws},
+    engine::remote::ws::{Client, Ws, Wss},
     opt::auth::Root,
     Surreal,
 };
@@ -82,7 +82,12 @@ type Fields = BTreeMap<String, Field>;
 async fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
 
-    let mut db = Surreal::new::<Ws>(&args.connection_url).await?;
+    let mut db = if args.connection_url.starts_with("https://") {
+        Surreal::new::<Wss>(&args.connection_url.replace("https://", "")).await?
+    } else {
+        Surreal::new::<Ws>(&args.connection_url).await?
+    };
+
     db.signin(Root {
         username: &args.username,
         password: &args.password,
