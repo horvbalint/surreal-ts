@@ -30,6 +30,7 @@ use nom::{
     sequence::delimited,
     IResult,
 };
+use regex::Regex;
 use serde::Deserialize;
 use surrealdb::{
     engine::remote::ws::{Client, Ws, Wss},
@@ -72,11 +73,7 @@ struct CliArgs {
 async fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
 
-    let db = if args.connection_url.starts_with("https://") {
-        Surreal::new::<Wss>(&args.connection_url.replace("https://", "")).await?
-    } else {
-        Surreal::new::<Ws>(&args.connection_url).await?
-    };
+    let db = connect_to_db(&args.connection_url).await?;
 
     db.signin(Root {
         username: &args.username,
@@ -92,6 +89,19 @@ async fn main() -> anyhow::Result<()> {
     generator.generate(&mut file).await?;
 
     Ok(())
+}
+
+async fn connect_to_db(connection_url: &str) -> anyhow::Result<Surreal<Client>> {
+    let re = Regex::new("^.+://")?;
+    let url = re.replace(connection_url, "").to_string();
+
+    let db = if connection_url.starts_with("https://") || connection_url.starts_with("wss://") {
+        Surreal::new::<Wss>(url).await?
+    } else {
+        Surreal::new::<Ws>(url).await?
+    };
+
+    Ok(db)
 }
 
 #[derive(Deserialize, Debug)]
