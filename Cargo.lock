@@ -2752,6 +2752,7 @@ dependencies = [
  "clap",
  "convert_case",
  "nom",
+ "regex",
  "serde",
  "surrealdb",
  "tokio",
