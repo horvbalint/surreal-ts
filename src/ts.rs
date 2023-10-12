@@ -4,26 +4,26 @@ use std::io::Write;
 use crate::Tables;
 use crate::{Field, utils::create_interface_name, Fields, FieldPayload};
 
-pub async fn write_tables(output_path: &str, tables: &mut Tables, add_table_info_types: bool) -> anyhow::Result<()> {
+pub fn write_tables(output_path: &str, tables: &mut Tables, add_table_meta_types: bool) -> anyhow::Result<()> {
     println!("Writing type declaration file...");
     let mut file = File::create(output_path)?;
 
-    if add_table_info_types {
+    if add_table_meta_types {
         write!(&mut file,
-"export type TableInfo = {{
+"export type TableMeta = {{
   name: string
-  fields: FieldInfo[]
+  fields: FieldMeta[]
   comment?: string
 }}
 
-export type FieldInfo = {{
+export type FieldMeta = {{
   name: string
   isOptional: boolean
   isArray: boolean
   type: string
   comment?: string
   isRecord?: true
-  fields?: FieldInfo[]
+  fields?: FieldMeta[]
 }}\n\n"
         )?;
     }

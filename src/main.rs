@@ -37,22 +37,22 @@ use surrealdb::{
 };
 
 mod utils;
-mod table_info;
+mod meta;
 mod ts;
 /// A simple typescript definition generator for SurrealDB
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct CliArgs {
     /// The connection url to the SurrealDB instance
-    #[arg(short, long, default_value_t = String::from("localhost:8000"))]
+    #[arg(short, long, default_value = "localhost:8000")]
     connection_url: String,
 
     /// The root username for the SurrealDB instance
-    #[arg(short, long, default_value_t = String::from("root"))]
+    #[arg(short, long, default_value = "root")]
     username: String,
 
     /// The root password for the SurrealDB instance
-    #[arg(short, long, default_value_t = String::from("root"))]
+    #[arg(short, long, default_value = "root")]
     password: String,
 
     /// The namespace to use
@@ -63,16 +63,20 @@ struct CliArgs {
     #[arg(short, long)]
     database: String,
 
-    /// Whether to store generated table and field data in the database inside the 'table_info' table
-    #[arg(short, long, default_value_t = false)]
+    /// Store generated table and field metadata into the database
+    #[arg(short, long)]
     store_in_db: bool,
 
-    /// Whether to generate a typescript definition file describing the tables of the database
-    #[arg(short, long, default_value_t = true)]
-    generate_ts_file: bool,
+    /// Name of the table to use when the 'store-in-db' flag is enabled
+    #[arg(short, long, default_value = "table_meta")]
+    metadata_table_name: String,
+
+    /// Skip the generation of a typescript definition file
+    #[arg(long)]
+    skip_ts_generation: bool,
 
     /// The path where the typescript defintion file will be generated
-    #[arg(short, long, default_value_t = String::from("db.d.ts"))]
+    #[arg(short, long, default_value = "db.d.ts")]
     output: String,
 }
 
@@ -92,15 +96,20 @@ async fn main() -> anyhow::Result<()> {
     .await?;
     db.use_ns(&args.namespace).use_db(&args.database).await?;
 
-    let mut tables = Generator::process(&mut db).await?;
+    let mut tables = Generator::process(&mut db)
+        .await?
+        .into_iter()
+        .filter(|(name, _)| name != &args.metadata_table_name)
+        .collect();
+
     print!("\n");
     
     if args.store_in_db {
-        table_info::store_tables(&mut db, &mut tables).await?;
+        meta::store_tables(&mut db, &args.metadata_table_name, &mut tables).await?;
     }
 
-    if args.generate_ts_file {
-        ts::write_tables(&args.output, &mut tables, args.store_in_db).await?;
+    if !args.skip_ts_generation {
+        ts::write_tables(&args.output, &mut tables, args.store_in_db)?;
     }
 
     println!("\nAll operations done ✅");

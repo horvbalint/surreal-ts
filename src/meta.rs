@@ -3,18 +3,19 @@ use surrealdb::{Surreal, engine::remote::ws::Client};
 
 use crate::{Fields, FieldPayload, Tables, Table};
 
-pub async fn store_tables(db: &mut Surreal<Client>, tables: &mut Tables) -> anyhow::Result<()> {
-    println!("Writing table infos into database...");
+pub async fn store_tables(db: &mut Surreal<Client>, metadata_table_name: &str, tables: &mut Tables) -> anyhow::Result<()> {
+    println!("Writing table metadata into database...");
 
-    db.query("
-        REMOVE TABLE table_info;
-        DEFINE TABLE table_info SCHEMALESS
+    db.query(format!("
+        REMOVE TABLE {metadata_table_name};
+        DEFINE TABLE {metadata_table_name} SCHEMALESS
             PERMISSIONS
                 FOR create, update, delete NONE;
-    ").await?;
+    "))
+    .await?;
 
     for (name, table) in tables {
-        store_table(db, &table, name).await?;
+        store_table(db, &metadata_table_name, &table, name).await?;
     }
     
     Ok(())
@@ -22,16 +23,16 @@ pub async fn store_tables(db: &mut Surreal<Client>, tables: &mut Tables) -> anyh
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct TableInfo {
+struct TableMeta {
     name: String,
-    fields: Vec<FieldInfo>,
+    fields: Vec<FieldMeta>,
     #[serde(skip_serializing_if = "Option::is_none")]
     comment: Option<String>
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct FieldInfo {
+struct FieldMeta {
     name: String,
     is_optional: bool,
     is_array: bool,
@@ -47,7 +48,7 @@ struct FieldInfo {
 enum DiscriminatingFieldParts {
     #[serde(rename_all = "camelCase")]
     SubFields {
-        fields: Vec<FieldInfo>,
+        fields: Vec<FieldMeta>,
     },
     #[serde(rename_all = "camelCase")]
     Record {
@@ -56,23 +57,23 @@ enum DiscriminatingFieldParts {
     None {}
 }
 
-async fn store_table(db: &mut Surreal<Client>, table: &Table, name: &str) -> anyhow::Result<()> {
-    let table_info = TableInfo {
+async fn store_table(db: &mut Surreal<Client>, metadata_table_name: &str, table: &Table, name: &str) -> anyhow::Result<()> {
+    let table_meta = TableMeta {
         name: name.to_string(),
         comment: table.comment.clone(),
         fields: get_fields(&table.fields),
     };
 
-    db.create::<Option<TableInfo>>(("table_info", name)).content(table_info).await?;
+    db.create::<Option<TableMeta>>((metadata_table_name, name)).content(table_meta).await?;
 
     Ok(())
 }
 
-fn get_fields(fields: &Fields) -> Vec<FieldInfo> {
-    let mut field_infos = vec![];
+fn get_fields(fields: &Fields) -> Vec<FieldMeta> {
+    let mut field_metas = vec![];
 
     for (name, field) in fields {
-        let info = FieldInfo {
+        let meta = FieldMeta {
             name: name.to_string(),
             is_optional: field.is_optional,
             is_array: field.is_array,
@@ -81,10 +82,10 @@ fn get_fields(fields: &Fields) -> Vec<FieldInfo> {
             discriminating: get_discriminating_parts(&field.payload),
         };
 
-        field_infos.push(info)
+        field_metas.push(meta)
     }
 
-    field_infos
+    field_metas
 }
 
 fn get_type(payload: &FieldPayload) -> String {
