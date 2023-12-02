@@ -30,7 +30,6 @@ use surrealdb::{
 mod meta;
 mod parser;
 mod ts;
-mod utils;
 /// A simple typescript definition generator for SurrealDB
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -91,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
         .filter(|(name, _)| name != &args.metadata_table_name)
         .collect();
 
-    print!("\n");
+    println!();
 
     if args.store_in_db {
         meta::store_tables(&mut db, &args.metadata_table_name, &mut tables).await?;
@@ -166,7 +165,7 @@ impl Generator {
 
         let (_, comment) = parser::parse_comment(definition).map_err(|err| err.to_owned())?;
 
-        let mut table = self
+        let table = self
             .tables
             .entry(name.to_string())
             .or_insert(FieldTree::Node(Node {
@@ -177,42 +176,52 @@ impl Generator {
             }));
 
         for path in info.fields.keys() {
-            Self::process_field(&mut table, path, &info.fields[path])?;
+            Self::process_field(table, path, &info.fields[path])?;
         }
 
         Ok(())
     }
 
     fn process_field(tree: &mut FieldTree, path: &str, definition: &str) -> anyhow::Result<()> {
-        let field = FieldTree::from(&definition)?;
+        let field = FieldTree::from(definition)?;
+        let normalized_path = path.replace("[*]", ""); // removing array item decorators, since they are not separate fields
 
         if path.ends_with("[*]") {
-            let parent_path = &path[..path.len() - 3];
-            let parent = tree.get_mut(parent_path).ok_or(Error::msg(
-                "Array item descriptor was reached before the array descriptor",
-            ))?;
-
-            match parent {
-                FieldTree::Leaf(parent_leaf) => match field {
-                    FieldTree::Leaf(item_leaf) => {
-                        parent_leaf.is_array = true;
-                        parent_leaf.name = item_leaf.name;
-                        parent_leaf.is_record = item_leaf.is_record;
-                    }
-                    FieldTree::Node(_) => {
-                        *parent = FieldTree::Node(Node {
-                            is_array: true,
-                            ..field.to_node()
-                        })
-                    }
-                },
-                FieldTree::Node(_) => {
-                    // Using the [*] opencounter this message, please open an issue at: https://github.com/horvbalint/surreal-ts/issues");
-                }
-            }
+            Self::handle_array_item(tree, &normalized_path, field)?
         } else {
-            let path = path.replace("[*]", "");
-            tree.insert(&path, field)?;
+            tree.insert(&normalized_path, field)?;
+        }
+
+        Ok(())
+    }
+
+    fn handle_array_item(
+        tree: &mut FieldTree,
+        parent_path: &str,
+        field: FieldTree,
+    ) -> anyhow::Result<()> {
+        let parent = tree
+            .get_mut(parent_path)
+            .ok_or(Error::msg("Array item reached before the array"))?;
+
+        match parent {
+            FieldTree::Leaf(parent_leaf) => match field {
+                FieldTree::Leaf(item_leaf) => {
+                    parent_leaf.is_array = true;
+                    parent_leaf.name = item_leaf.name;
+                    parent_leaf.is_record = item_leaf.is_record;
+                }
+                FieldTree::Node(_) => {
+                    *parent = FieldTree::Node(Node {
+                        is_array: true,
+                        ..field.into_node()
+                    })
+                }
+            },
+            FieldTree::Node(_) => {
+                // Using the [*] operator on objects does not seem valid
+                unimplemented!("If you encounter this message, please open an issue at: https://github.com/horvbalint/surreal-ts/issues");
+            }
         }
 
         Ok(())
@@ -316,7 +325,7 @@ impl FieldTree {
         Some(cursor)
     }
 
-    fn to_leaf(self) -> Leaf {
+    fn into_leaf(self) -> Leaf {
         match self {
             Self::Leaf(leaf) => leaf,
             Self::Node(_) => panic!("Tried to use FieldTree::Node as FieldTree::Leaf"),
@@ -337,7 +346,7 @@ impl FieldTree {
         }
     }
 
-    fn to_node(self) -> Node {
+    fn into_node(self) -> Node {
         match self {
             Self::Node(node) => node,
             Self::Leaf(_) => panic!("Tried to use FieldTree::Leaf as FieldTree::Node"),

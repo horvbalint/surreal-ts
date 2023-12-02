@@ -21,7 +21,7 @@ pub async fn store_tables(
     .await?;
 
     for (name, table) in tables {
-        store_table(db, &metadata_table_name, &table, name).await?;
+        store_table(db, metadata_table_name, table, name).await?;
     }
 
     Ok(())
