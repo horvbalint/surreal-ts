@@ -14,20 +14,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see https://www.gnu.org/licenses/.
 
+use core::panic;
 use std::collections::BTreeMap;
 
+use anyhow::Error;
 use clap::Parser;
-use nom::branch::alt;
-use nom::bytes::complete::tag;
-use nom::character::complete::alpha1;
-use nom::combinator::rest;
-use nom::sequence::pair;
-use nom::{
-    bytes::complete::{is_not, take_until1},
-    combinator::opt,
-    sequence::delimited,
-    IResult,
-};
 use regex::Regex;
 use serde::Deserialize;
 use surrealdb::{
@@ -36,8 +27,8 @@ use surrealdb::{
     Surreal,
 };
 
-mod utils;
 mod meta;
+mod parser;
 mod ts;
 /// A simple typescript definition generator for SurrealDB
 #[derive(Parser, Debug)]
@@ -80,9 +71,6 @@ struct CliArgs {
     output: String,
 }
 
-type Tables = BTreeMap<String, Table>;
-type Fields = BTreeMap<String, Field>;
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
@@ -102,8 +90,8 @@ async fn main() -> anyhow::Result<()> {
         .filter(|(name, _)| name != &args.metadata_table_name)
         .collect();
 
-    print!("\n");
-    
+    println!();
+
     if args.store_in_db {
         meta::store_tables(&mut db, &args.metadata_table_name, &mut tables).await?;
     }
@@ -144,21 +132,13 @@ struct Generator {
     tables: Tables,
 }
 
-pub struct Table {
-    fields: Fields,
-    comment: Option<String>,
-}
-
 impl Generator {
     pub async fn process(db: &mut Surreal<Client>) -> anyhow::Result<Tables> {
         let mut generator = Self {
             tables: BTreeMap::new(),
         };
 
-        let info: Option<DatabaseInfo> = db
-            .query("INFO FOR DB")
-            .await?
-            .take(0)?;
+        let info: Option<DatabaseInfo> = db.query("INFO FOR DB").await?.take(0)?;
         let info = info.expect("Failed to get information of the database.");
 
         for (name, definition) in info.tables {
@@ -168,9 +148,14 @@ impl Generator {
         Ok(generator.tables)
     }
 
-    async fn process_table(&mut self, db: &mut Surreal<Client>, name: &str, definition: &str) -> anyhow::Result<()> {
+    async fn process_table(
+        &mut self,
+        db: &mut Surreal<Client>,
+        name: &str,
+        definition: &str,
+    ) -> anyhow::Result<()> {
         println!("Processing table: {name}");
-        
+
         let info: Option<TableInfo> = db
             .query(format!("INFO FOR TABLE {name}"))
             .bind(("table", name))
@@ -178,145 +163,222 @@ impl Generator {
             .take(0)?;
         let info = info.expect("Failed to get information of the table.");
 
-        let (_, comment) = parse_comment(definition)
-            .map_err(|err| err.to_owned())?;
+        let (_, comment) = parser::parse_comment(definition).map_err(|err| err.to_owned())?;
 
-        let table = self.tables.entry(name.to_string()).or_insert(Table {
-            fields: BTreeMap::new(),
-            comment,
-        });
+        let table = self
+            .tables
+            .entry(name.to_string())
+            .or_insert(FieldTree::Node(Node {
+                is_optional: false,
+                is_array: false,
+                comment,
+                fields: BTreeMap::new(),
+            }));
 
         for path in info.fields.keys() {
-            Self::process_field(&mut table.fields, path, &info.fields[path])?;
+            Self::process_field(table, path, &info.fields[path])?;
         }
 
         Ok(())
     }
 
-    fn process_field(tree: &mut Fields, path: &str, definition: &str) -> anyhow::Result<()> {
-        let field = Field::from(&definition)?;
-        Self::add_to_tree(tree, path.split('.'), field);
+    fn process_field(tree: &mut FieldTree, path: &str, definition: &str) -> anyhow::Result<()> {
+        let field = FieldTree::from(definition)?;
+        let normalized_path = path.replace("[*]", ""); // removing array item decorators, since they are not separate fields
+
+        if path.ends_with("[*]") {
+            Self::handle_array_item(tree, &normalized_path, field)?
+        } else {
+            tree.insert(&normalized_path, field)?;
+        }
 
         Ok(())
     }
 
-    fn add_to_tree<'a>(fields: &mut Fields, mut steps: impl Iterator<Item=&'a str>, field: Field) {
-        let Some(step) = steps.next() else {
-            return
-        };
+    fn handle_array_item(
+        tree: &mut FieldTree,
+        parent_path: &str,
+        field: FieldTree,
+    ) -> anyhow::Result<()> {
+        let parent = tree
+            .get_mut(parent_path)
+            .ok_or(Error::msg("Array item reached before the array"))?;
 
-        let step = step.split("[").next() // array_key[*] -> array_key
-            .expect("Field path contained empty step"); 
-
-        if let Some(curr_field) = fields.get_mut(step) {
-            let FieldPayload::SubFields(ref mut fields) = curr_field.payload else {
-                unreachable!("Attempted to add field into non-object field");
-            };
-            
-            Self::add_to_tree(fields, steps, field)
-        }
-        else {
-            fields.insert(step.to_string(), field);
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Field {
-    is_optional: bool,
-    is_array: bool,
-    payload: FieldPayload,
-    comment: Option<String>,
-}
-
-#[derive(Debug)]
-pub enum FieldPayload {
-    Type  {
-        name: String,
-        is_record: bool,
-    },
-    SubFields(Fields),
-}
-
-#[derive(Debug)]
-pub struct FieldProps<'a> {
-    is_optional: bool,
-    is_array: bool,
-    is_record: bool,
-    name: &'a str,
-}
-
-impl Field {
-    pub fn from(definition: &str) -> anyhow::Result<Self> {
-        let (remaining, raw_type) = Self::parse_type_from_definition(definition)
-                .map_err(|err| err.to_owned())?;
-
-        let (_, props) = Self::parse_type(raw_type)
-            .map_err(|err| err.to_owned())?;
-
-        let (_, comment) = parse_comment(remaining)
-            .map_err(|err| err.to_owned())?;
-
-        let field = Self {
-            is_array: props.is_array,
-            is_optional: props.is_optional,
-            comment,
-            payload: if props.name == "object" {
-                FieldPayload::SubFields(BTreeMap::new())
-            } else {
-                FieldPayload::Type {
-                    name: props.name.to_string(),
-                    is_record: props.is_record,
+        match parent {
+            FieldTree::Leaf(parent_leaf) => match field {
+                FieldTree::Leaf(item_leaf) => {
+                    parent_leaf.is_array = true;
+                    parent_leaf.name = item_leaf.name;
+                    parent_leaf.is_record = item_leaf.is_record;
                 }
+                FieldTree::Node(_) => {
+                    *parent = FieldTree::Node(Node {
+                        is_array: true,
+                        ..field.into_node()
+                    })
+                }
+            },
+            FieldTree::Node(_) => {
+                // Using the [*] operator on objects does not seem valid
+                unimplemented!("If you encounter this message, please open an issue at: https://github.com/horvbalint/surreal-ts/issues");
             }
+        }
+
+        Ok(())
+    }
+}
+
+type Tables = BTreeMap<String, FieldTree>;
+type Fields = BTreeMap<String, FieldTree>;
+
+#[derive(Debug)]
+pub struct Node {
+    is_optional: bool,
+    is_array: bool,
+    comment: Option<String>,
+    fields: Fields,
+}
+
+#[derive(Debug)]
+pub struct Leaf {
+    is_optional: bool,
+    is_array: bool,
+    comment: Option<String>,
+    name: String,
+    is_record: bool,
+}
+
+#[derive(Debug)]
+pub enum FieldTree {
+    Node(Node),
+    Leaf(Leaf),
+}
+
+#[allow(dead_code)]
+pub struct FieldCommon<'a> {
+    is_optional: bool,
+    is_array: bool,
+    comment: &'a Option<String>,
+}
+
+#[allow(dead_code)]
+impl FieldTree {
+    pub fn from(definition: &str) -> anyhow::Result<Self> {
+        let (remaining, raw_type) =
+            parser::parse_type_from_definition(definition).map_err(|err| err.to_owned())?;
+
+        let (_, props) = parser::parse_type(raw_type).map_err(|err| err.to_owned())?;
+        let (_, comment) = parser::parse_comment(remaining).map_err(|err| err.to_owned())?;
+
+        let field = if props.name == "object" {
+            Self::Node(Node {
+                is_array: props.is_array,
+                is_optional: props.is_optional,
+                comment,
+                fields: BTreeMap::new(),
+            })
+        } else {
+            Self::Leaf(Leaf {
+                is_array: props.is_array,
+                is_optional: props.is_optional,
+                comment,
+                name: props.name.to_string(),
+                is_record: props.is_record,
+            })
         };
 
         Ok(field)
     }
 
-    fn parse_type_from_definition(input: &str) -> IResult<&str, &str> {
-        let (input, _) = take_until1("TYPE")(input)?;
-        let (input, _) = tag("TYPE ")(input)?;
-        let (input, raw_type) = alt((take_until1("DEFAULT"), take_until1("VALUE"), take_until1("ASSERT"), take_until1("PERMISSIONS"), take_until1("COMMENT"), rest))(input)?;
+    fn insert(&mut self, path: &str, field: FieldTree) -> anyhow::Result<()> {
+        let (parent, key) = match path.rsplit_once('.') {
+            Some((parent_path, last_step)) => {
+                let parent = self.get_mut(parent_path).ok_or(anyhow::Error::msg(
+                    "One of the parents is missing from the tree",
+                ))?;
 
-        Ok((input, raw_type))
+                (parent, last_step)
+            }
+            None => (self, path),
+        };
+
+        parent.as_node_mut().fields.insert(key.to_string(), field);
+
+        Ok(())
     }
 
-    fn parse_type(input: &str) -> IResult<&str, FieldProps> {
-        let (input, inner) = opt(delimited(tag("option<"), Self::parse_type, tag(">")))(input)?;
-        if let Some(props) = inner {
-            return Ok((input, FieldProps {is_optional: true, ..props}));
+    fn get_mut(&mut self, path: &str) -> Option<&mut FieldTree> {
+        let mut cursor = self;
+
+        for step in path.split('.') {
+            let Self::Node(Node { fields, .. }) = cursor else {
+                return None;
+            };
+
+            let Some(field) = fields.get_mut(step) else {
+                return None;
+            };
+
+            cursor = field
         }
 
-        let (input, inner) = opt(delimited(tag("array<"), pair(Self::parse_type, opt(is_not(">"))), tag(">")))(input)?;
-        if let Some((props, _)) = inner {
-            return Ok((input, FieldProps {is_array: true, ..props}));
-        }
-
-        let (input, inner) = opt(delimited(tag("set<"), pair(Self::parse_type, opt(is_not(">"))), tag(">")))(input)?;
-        if let Some((props, _)) = inner {
-            return Ok((input, FieldProps {is_array: true, ..props}));
-        }
-        
-        let (input, inner) = opt(delimited(tag("record<"), is_not(">"), tag(">")))(input)?;
-        if let Some(reference) = inner {
-            return Ok((input, FieldProps {name: reference, is_record: true, is_array: false, is_optional: false}))
-        }
-
-        let (input, name) = alpha1(input)?;
-        Ok((input, FieldProps {name, is_record: false, is_array: false, is_optional: false}))
+        Some(cursor)
     }
-}
 
-fn parse_comment(input: &str) -> IResult<&str, Option<String>> {
-    let (input, _) = opt(take_until1("COMMENT"))(input)?;
-    let (input, res) = opt(tag("COMMENT "))(input)?;
-
-    if res.is_some() {
-        let (input, comment) = delimited(tag("'"), is_not("'"), tag("'"))(input)?;
-        Ok((input, Some(comment.to_string())))
+    fn into_leaf(self) -> Leaf {
+        match self {
+            Self::Leaf(leaf) => leaf,
+            Self::Node(_) => panic!("Tried to use FieldTree::Node as FieldTree::Leaf"),
+        }
     }
-    else {
-        Ok((input, None))
+
+    fn as_leaf(&self) -> &Leaf {
+        match self {
+            Self::Leaf(leaf) => leaf,
+            Self::Node(_) => panic!("Tried to use FieldTree::Node as FieldTree::Leaf"),
+        }
+    }
+
+    fn as_leaf_mut(&mut self) -> &mut Leaf {
+        match self {
+            Self::Leaf(leaf) => leaf,
+            Self::Node(_) => panic!("Tried to use FieldTree::Node as FieldTree::Leaf"),
+        }
+    }
+
+    fn into_node(self) -> Node {
+        match self {
+            Self::Node(node) => node,
+            Self::Leaf(_) => panic!("Tried to use FieldTree::Leaf as FieldTree::Node"),
+        }
+    }
+
+    fn as_node(&self) -> &Node {
+        match self {
+            Self::Node(node) => node,
+            Self::Leaf(_) => panic!("Tried to use FieldTree::Leaf as FieldTree::Node"),
+        }
+    }
+
+    fn as_node_mut(&mut self) -> &mut Node {
+        match self {
+            Self::Node(node) => node,
+            Self::Leaf(_) => panic!("Tried to use FieldTree::Leaf as FieldTree::Node"),
+        }
+    }
+
+    fn get_common(&self) -> FieldCommon {
+        match self {
+            FieldTree::Node(node) => FieldCommon {
+                is_optional: node.is_optional,
+                is_array: node.is_array,
+                comment: &node.comment,
+            },
+            FieldTree::Leaf(leaf) => FieldCommon {
+                is_optional: leaf.is_optional,
+                is_array: leaf.is_array,
+                comment: &leaf.comment,
+            },
+        }
     }
 }
