@@ -1,8 +1,9 @@
 use std::fs::File;
 use std::io::Write;
 
-use crate::{utils::create_interface_name, Fields};
-use crate::{FieldTree, Leaf, Tables};
+use convert_case::{Case, Casing};
+
+use crate::{FieldTree, Fields, Leaf, Tables};
 
 pub fn write_tables(
     output_path: &str,
@@ -75,10 +76,10 @@ fn write_object(
     from_db: bool,
     depth: usize,
 ) -> anyhow::Result<()> {
-    if fields.len() == 0 {
+    if fields.is_empty() {
         write!(file, "object")?;
     } else {
-        write!(file, "{{\n")?;
+        writeln!(file, "{{")?;
 
         let indentation = "\t".repeat(depth);
         for key in fields.keys() {
@@ -119,7 +120,7 @@ fn write_field(
         write!(file, ">")?;
     }
 
-    write!(file, "\n")?;
+    writeln!(file)?;
     Ok(())
 }
 
@@ -158,4 +159,14 @@ fn write_primitive(
 
     write!(file, "{name}")?;
     Ok(())
+}
+
+pub fn create_interface_name(name: &str, from_db: bool) -> String {
+    let pascal_case_name = name.to_case(Case::Pascal);
+
+    if from_db {
+        format!("Out{pascal_case_name}")
+    } else {
+        format!("In{pascal_case_name}")
+    }
 }
