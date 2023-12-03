@@ -165,15 +165,14 @@ impl Generator {
 
         let (_, comment) = parser::parse_comment(definition).map_err(|err| err.to_owned())?;
 
-        let table = self
-            .tables
-            .entry(name.to_string())
-            .or_insert(FieldTree::Node(Node {
-                is_optional: false,
-                is_array: false,
-                comment,
+        let table = self.tables.entry(name.to_string()).or_insert(FieldTree {
+            is_optional: false,
+            is_array: false,
+            comment,
+            r#type: FieldType::Node(Node {
                 fields: BTreeMap::new(),
-            }));
+            }),
+        });
 
         for path in info.fields.keys() {
             Self::process_field(table, path, &info.fields[path])?;
@@ -204,21 +203,21 @@ impl Generator {
             .get_mut(parent_path)
             .ok_or(Error::msg("Array item reached before the array"))?;
 
-        match parent {
-            FieldTree::Leaf(parent_leaf) => match field {
-                FieldTree::Leaf(item_leaf) => {
-                    parent_leaf.is_array = true;
+        match &mut parent.r#type {
+            FieldType::Leaf(parent_leaf) => match field.r#type {
+                FieldType::Leaf(item_leaf) => {
+                    parent.is_array = true;
                     parent_leaf.name = item_leaf.name;
                     parent_leaf.is_record = item_leaf.is_record;
                 }
-                FieldTree::Node(_) => {
-                    *parent = FieldTree::Node(Node {
+                FieldType::Node(_) => {
+                    *parent = FieldTree {
                         is_array: true,
-                        ..field.into_node()
-                    })
+                        ..field
+                    }
                 }
             },
-            FieldTree::Node(_) => {
+            FieldType::Node(_) => {
                 // Using the [*] operator on objects does not seem valid
                 unimplemented!("If you encounter this message, please open an issue at: https://github.com/horvbalint/surreal-ts/issues");
             }
@@ -232,33 +231,11 @@ type Tables = BTreeMap<String, FieldTree>;
 type Fields = BTreeMap<String, FieldTree>;
 
 #[derive(Debug)]
-pub struct Node {
+pub struct FieldTree {
     is_optional: bool,
     is_array: bool,
     comment: Option<String>,
-    fields: Fields,
-}
-
-#[derive(Debug)]
-pub struct Leaf {
-    is_optional: bool,
-    is_array: bool,
-    comment: Option<String>,
-    name: String,
-    is_record: bool,
-}
-
-#[derive(Debug)]
-pub enum FieldTree {
-    Node(Node),
-    Leaf(Leaf),
-}
-
-#[allow(dead_code)]
-pub struct FieldCommon<'a> {
-    is_optional: bool,
-    is_array: bool,
-    comment: &'a Option<String>,
+    r#type: FieldType,
 }
 
 #[allow(dead_code)]
@@ -270,21 +247,20 @@ impl FieldTree {
         let (_, props) = parser::parse_type(raw_type).map_err(|err| err.to_owned())?;
         let (_, comment) = parser::parse_comment(remaining).map_err(|err| err.to_owned())?;
 
-        let field = if props.name == "object" {
-            Self::Node(Node {
-                is_array: props.is_array,
-                is_optional: props.is_optional,
-                comment,
-                fields: BTreeMap::new(),
-            })
-        } else {
-            Self::Leaf(Leaf {
-                is_array: props.is_array,
-                is_optional: props.is_optional,
-                comment,
-                name: props.name.to_string(),
-                is_record: props.is_record,
-            })
+        let field = Self {
+            is_array: props.is_array,
+            is_optional: props.is_optional,
+            comment,
+            r#type: if props.name == "object" {
+                FieldType::Node(Node {
+                    fields: BTreeMap::new(),
+                })
+            } else {
+                FieldType::Leaf(Leaf {
+                    name: props.name.to_string(),
+                    is_record: props.is_record,
+                })
+            },
         };
 
         Ok(field)
@@ -302,7 +278,11 @@ impl FieldTree {
             None => (self, path),
         };
 
-        parent.as_node_mut().fields.insert(key.to_string(), field);
+        parent
+            .r#type
+            .as_node_mut()
+            .fields
+            .insert(key.to_string(), field);
 
         Ok(())
     }
@@ -311,11 +291,11 @@ impl FieldTree {
         let mut cursor = self;
 
         for step in path.split('.') {
-            let Self::Node(Node { fields, .. }) = cursor else {
+            let FieldType::Node(node) = &mut cursor.r#type else {
                 return None;
             };
 
-            let Some(field) = fields.get_mut(step) else {
+            let Some(field) = node.fields.get_mut(step) else {
                 return None;
             };
 
@@ -324,61 +304,37 @@ impl FieldTree {
 
         Some(cursor)
     }
+}
 
-    fn into_leaf(self) -> Leaf {
-        match self {
-            Self::Leaf(leaf) => leaf,
-            Self::Node(_) => panic!("Tried to use FieldTree::Node as FieldTree::Leaf"),
-        }
-    }
+#[derive(Debug)]
+pub enum FieldType {
+    Node(Node),
+    Leaf(Leaf),
+}
 
-    fn as_leaf(&self) -> &Leaf {
-        match self {
-            Self::Leaf(leaf) => leaf,
-            Self::Node(_) => panic!("Tried to use FieldTree::Node as FieldTree::Leaf"),
-        }
-    }
-
-    fn as_leaf_mut(&mut self) -> &mut Leaf {
-        match self {
-            Self::Leaf(leaf) => leaf,
-            Self::Node(_) => panic!("Tried to use FieldTree::Node as FieldTree::Leaf"),
-        }
-    }
-
-    fn into_node(self) -> Node {
-        match self {
-            Self::Node(node) => node,
-            Self::Leaf(_) => panic!("Tried to use FieldTree::Leaf as FieldTree::Node"),
-        }
-    }
-
+impl FieldType {
     fn as_node(&self) -> &Node {
         match self {
             Self::Node(node) => node,
-            Self::Leaf(_) => panic!("Tried to use FieldTree::Leaf as FieldTree::Node"),
+            Self::Leaf(_) => panic!("Tried to use FieldType::Leaf as FieldType::Node"),
         }
     }
 
     fn as_node_mut(&mut self) -> &mut Node {
         match self {
             Self::Node(node) => node,
-            Self::Leaf(_) => panic!("Tried to use FieldTree::Leaf as FieldTree::Node"),
+            Self::Leaf(_) => panic!("Tried to use FieldType::Leaf as FieldType::Node"),
         }
     }
+}
 
-    fn get_common(&self) -> FieldCommon {
-        match self {
-            FieldTree::Node(node) => FieldCommon {
-                is_optional: node.is_optional,
-                is_array: node.is_array,
-                comment: &node.comment,
-            },
-            FieldTree::Leaf(leaf) => FieldCommon {
-                is_optional: leaf.is_optional,
-                is_array: leaf.is_array,
-                comment: &leaf.comment,
-            },
-        }
-    }
+#[derive(Debug)]
+pub struct Node {
+    fields: Fields,
+}
+
+#[derive(Debug)]
+pub struct Leaf {
+    name: String,
+    is_record: bool,
 }

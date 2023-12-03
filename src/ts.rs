@@ -3,7 +3,7 @@ use std::io::Write;
 
 use convert_case::{Case, Casing};
 
-use crate::{FieldTree, Fields, Leaf, Tables};
+use crate::{FieldTree, FieldType, Fields, Leaf, Tables};
 
 pub fn write_tables(
     output_path: &str,
@@ -35,7 +35,7 @@ export type FieldMeta = {{
     }
 
     for (name, table) in tables.iter_mut() {
-        let node = table.as_node_mut();
+        let node = table.r#type.as_node_mut();
 
         write_table(&mut file, name, &mut node.fields, false)?;
         write_table(&mut file, name, &mut node.fields, true)?;
@@ -53,16 +53,16 @@ fn write_table(
     let interface_name = create_interface_name(name, from_db);
     write!(file, "export type {interface_name} = ")?;
 
-    fields.insert(
-        "id".to_string(),
-        FieldTree::Leaf(Leaf {
-            is_optional: !from_db,
-            is_array: false,
-            comment: None,
+    let field = FieldTree {
+        is_optional: !from_db,
+        is_array: false,
+        comment: None,
+        r#type: FieldType::Leaf(Leaf {
             name: "string".to_string(),
             is_record: false,
         }),
-    );
+    };
+    fields.insert("id".to_string(), field);
 
     write_object(file, fields, from_db, 0)?;
 
@@ -99,24 +99,22 @@ fn write_field(
     from_db: bool,
     depth: usize,
 ) -> anyhow::Result<()> {
-    let common_props = field.get_common();
-
-    if common_props.is_optional {
+    if field.is_optional {
         write!(file, "?")?;
     }
 
     write!(file, ": ")?;
 
-    if common_props.is_array {
+    if field.is_array {
         write!(file, "Array<")?;
     }
 
-    match field {
-        FieldTree::Node(node) => write_object(file, &node.fields, from_db, depth + 1)?,
-        FieldTree::Leaf(leaf) => write_primitive(file, &leaf.name, leaf.is_record, from_db)?,
+    match &field.r#type {
+        FieldType::Node(node) => write_object(file, &node.fields, from_db, depth + 1)?,
+        FieldType::Leaf(leaf) => write_primitive(file, &leaf.name, leaf.is_record, from_db)?,
     }
 
-    if common_props.is_array {
+    if field.is_array {
         write!(file, ">")?;
     }
 

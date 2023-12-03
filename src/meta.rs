@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use surrealdb::{engine::remote::ws::Client, Surreal};
 
-use crate::{FieldTree, Fields, Tables};
+use crate::{FieldTree, FieldType, Fields, Tables};
 
 pub async fn store_tables(
     db: &mut Surreal<Client>,
@@ -71,8 +71,8 @@ async fn store_table(
 ) -> anyhow::Result<()> {
     let table_meta = TableMeta {
         name: name.to_string(),
-        comment: table.as_node().comment.clone(),
-        fields: get_fields(&table.as_node().fields),
+        comment: table.comment.clone(),
+        fields: get_fields(&table.r#type.as_node().fields),
     };
 
     db.create::<Option<TableMeta>>((metadata_table_name, name))
@@ -83,36 +83,37 @@ async fn store_table(
 }
 
 fn get_fields(fields: &Fields) -> Vec<FieldMeta> {
-    let mut field_metas = vec![];
+    fields
+        .iter()
+        .map(|(name, field)| FieldMeta {
+            name: name.to_string(),
+            is_optional: field.is_optional,
+            is_array: field.is_array,
+            comment: field.comment.clone(),
+            r#type: calc_field_type(field),
+            discriminating: calc_discriminating_parts(field),
+        })
+        .collect()
+}
 
-    for (name, field) in fields {
-        let meta = match field {
-            FieldTree::Node(node) => FieldMeta {
-                name: name.to_string(),
-                is_optional: node.is_optional,
-                is_array: node.is_array,
-                r#type: "object".to_string(),
-                comment: node.comment.clone(),
-                discriminating: DiscriminatingFieldParts::SubFields {
-                    fields: get_fields(&node.fields),
-                },
-            },
-            FieldTree::Leaf(leaf) => FieldMeta {
-                name: name.to_string(),
-                is_optional: leaf.is_optional,
-                is_array: leaf.is_array,
-                r#type: leaf.name.clone(),
-                comment: leaf.comment.clone(),
-                discriminating: if leaf.is_record {
-                    DiscriminatingFieldParts::Record { is_record: true }
-                } else {
-                    DiscriminatingFieldParts::None {}
-                },
-            },
-        };
-
-        field_metas.push(meta)
+fn calc_field_type(field: &FieldTree) -> String {
+    match &field.r#type {
+        FieldType::Node(_) => "object".to_string(),
+        FieldType::Leaf(leaf) => leaf.name.to_string(),
     }
+}
 
-    field_metas
+fn calc_discriminating_parts(field: &FieldTree) -> DiscriminatingFieldParts {
+    match &field.r#type {
+        FieldType::Node(node) => DiscriminatingFieldParts::SubFields {
+            fields: get_fields(&node.fields),
+        },
+        FieldType::Leaf(leaf) => {
+            if leaf.is_record {
+                DiscriminatingFieldParts::Record { is_record: true }
+            } else {
+                DiscriminatingFieldParts::None {}
+            }
+        }
+    }
 }
