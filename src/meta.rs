@@ -15,7 +15,7 @@ pub async fn store_tables(
         REMOVE TABLE {metadata_table_name};
         DEFINE TABLE {metadata_table_name} SCHEMALESS
             PERMISSIONS
-                FOR create, update, delete NONE;
+                FOR select FULL;
     "
     ))
     .await?;
