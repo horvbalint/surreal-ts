@@ -15,13 +15,13 @@ jobs:
         build:
           - {
               NAME: linux-x64-glibc,
-              OS: ubuntu-20.04,
+              OS: ubuntu-24.04,
               TOOLCHAIN: stable,
               TARGET: x86_64-unknown-linux-gnu,
             }
           - {
               NAME: linux-arm64-glibc,
-              OS: ubuntu-20.04,
+              OS: ubuntu-24.04,
               TOOLCHAIN: stable,
               TARGET: aarch64-unknown-linux-gnu,
             }
@@ -33,13 +33,13 @@ jobs:
             }
           - {
               NAME: darwin-x64,
-              OS: macos-11,
+              OS: macos-14,
               TOOLCHAIN: stable,
               TARGET: x86_64-apple-darwin,
             }
           - {
               NAME: darwin-arm64,
-              OS: macos-11,
+              OS: macos-14,
               TOOLCHAIN: stable,
               TARGET: aarch64-apple-darwin,
             }
