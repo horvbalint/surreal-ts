@@ -21,7 +21,7 @@ jobs:
             }
           - {
               NAME: linux-arm64-glibc,
-              OS: ubuntu-24.04,
+              OS: ubuntu-20.04,
               TOOLCHAIN: stable,
               TARGET: aarch64-unknown-linux-gnu,
             }
