@@ -101,11 +101,11 @@ pub fn parse_type_from_definition(input: &str) -> IResult<&str, &str> {
     let (input, _) = take_until1("TYPE")(input)?;
     let (input, _) = tag("TYPE ")(input)?;
     let (input, raw_type) = alt((
+        take_until1("COMMENT"),
         take_until1("DEFAULT"),
         take_until1("VALUE"),
         take_until1("ASSERT"),
         take_until1("PERMISSIONS"),
-        take_until1("COMMENT"),
         rest,
     ))(input)?;
 
