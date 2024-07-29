@@ -19,13 +19,8 @@ use std::collections::BTreeMap;
 
 use anyhow::Error;
 use clap::Parser;
-use regex::Regex;
 use serde::Deserialize;
-use surrealdb::{
-    engine::remote::ws::{Client, Ws, Wss},
-    opt::auth::Root,
-    Surreal,
-};
+use surrealdb::{engine::any::Any, opt::auth::Root, Surreal};
 
 mod meta;
 mod parser;
@@ -35,7 +30,7 @@ mod ts;
 #[command(author, version, about, long_about = None)]
 struct CliArgs {
     /// The connection url to the SurrealDB instance
-    #[arg(short, long, default_value = "localhost:8000")]
+    #[arg(short, long, default_value = "http://localhost:8000")]
     connection_url: String,
 
     /// The root username for the SurrealDB instance
@@ -75,7 +70,8 @@ struct CliArgs {
 async fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
 
-    let mut db = connect_to_db(&args.connection_url).await?;
+    // let mut db = connect_to_db(&args.connection_url).await?;
+    let mut db = surrealdb::engine::any::connect(&args.connection_url).await?;
 
     db.signin(Root {
         username: &args.username,
@@ -105,19 +101,6 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn connect_to_db(connection_url: &str) -> anyhow::Result<Surreal<Client>> {
-    let re = Regex::new("^.+://")?;
-    let url = re.replace(connection_url, "").to_string();
-
-    let db = if connection_url.starts_with("https://") || connection_url.starts_with("wss://") {
-        Surreal::new::<Wss>(url).await?
-    } else {
-        Surreal::new::<Ws>(url).await?
-    };
-
-    Ok(db)
-}
-
 #[derive(Deserialize, Debug)]
 struct DatabaseInfo {
     tables: BTreeMap<String, String>,
@@ -133,7 +116,7 @@ struct Generator {
 }
 
 impl Generator {
-    pub async fn process(db: &mut Surreal<Client>) -> anyhow::Result<Tables> {
+    pub async fn process(db: &mut Surreal<Any>) -> anyhow::Result<Tables> {
         let mut generator = Self {
             tables: BTreeMap::new(),
         };
@@ -150,7 +133,7 @@ impl Generator {
 
     async fn process_table(
         &mut self,
-        db: &mut Surreal<Client>,
+        db: &mut Surreal<Any>,
         name: &str,
         definition: &str,
     ) -> anyhow::Result<()> {

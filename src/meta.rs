@@ -1,10 +1,13 @@
 use serde::{Deserialize, Serialize};
-use surrealdb::{engine::remote::ws::Client, Surreal};
+use surrealdb::{
+    engine::{any::Any, remote::ws::Client},
+    Surreal,
+};
 
 use crate::{FieldTree, FieldType, Fields, Tables};
 
 pub async fn store_tables(
-    db: &mut Surreal<Client>,
+    db: &mut Surreal<Any>,
     metadata_table_name: &str,
     tables: &mut Tables,
 ) -> anyhow::Result<()> {
@@ -64,7 +67,7 @@ enum DiscriminatingFieldParts {
 }
 
 async fn store_table(
-    db: &mut Surreal<Client>,
+    db: &mut Surreal<Any>,
     metadata_table_name: &str,
     table: &FieldTree,
     name: &str,
