@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use surrealdb::{engine::any::Any, Surreal};
 
-use crate::{FieldTree, FieldType, Fields, Tables};
+use surreal_ts_core::{FieldTree, FieldType, Fields, Tables};
 
 pub async fn store_tables(
     db: &mut Surreal<Any>,

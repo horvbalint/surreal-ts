@@ -3,7 +3,7 @@ use std::io::Write;
 
 use convert_case::{Case, Casing};
 
-use crate::{FieldTree, FieldType, Fields, Leaf, Tables};
+use surreal_ts_core::{FieldTree, FieldType, Fields, Leaf, Tables};
 
 pub fn write_tables(
     output_path: &str,

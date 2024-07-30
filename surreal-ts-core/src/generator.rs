@@ -1,122 +1,40 @@
-// A simple to use typescript type definition generator for SurrealDB
-// Copyright (C) 2023  Horváth Bálint
-
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see https://www.gnu.org/licenses/.
-
 use core::panic;
 use std::collections::BTreeMap;
 
-use anyhow::Error;
-use clap::Parser;
 use serde::Deserialize;
-use surrealdb::{engine::any::Any, opt::auth::Root, Surreal};
+use surrealdb::{engine::any::Any, Surreal};
+use thiserror::Error;
 
-mod meta;
-mod parser;
-mod ts;
-/// A simple typescript definition generator for SurrealDB
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct CliArgs {
-    /// The connection url to the SurrealDB instance
-    #[arg(short, long, default_value = "http://localhost:8000")]
-    connection_url: String,
-
-    /// The root username for the SurrealDB instance
-    #[arg(short, long, default_value = "root")]
-    username: String,
-
-    /// The root password for the SurrealDB instance
-    #[arg(short, long, default_value = "root")]
-    password: String,
-
-    /// The namespace to use
-    #[arg(short, long)]
-    namespace: String,
-
-    /// The database to use
-    #[arg(short, long)]
-    database: String,
-
-    /// Store generated table and field metadata into the database
-    #[arg(short, long)]
-    store_in_db: bool,
-
-    /// Name of the table to use when the 'store-in-db' flag is enabled
-    #[arg(short, long, default_value = "table_meta")]
-    metadata_table_name: String,
-
-    /// Skip the generation of a typescript definition file
-    #[arg(long)]
-    skip_ts_generation: bool,
-
-    /// The path where the typescript defintion file will be generated
-    #[arg(short, long, default_value = "db.d.ts")]
-    output: String,
-}
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let args = CliArgs::parse();
-
-    // let mut db = connect_to_db(&args.connection_url).await?;
-    let mut db = surrealdb::engine::any::connect(&args.connection_url).await?;
-
-    db.signin(Root {
-        username: &args.username,
-        password: &args.password,
-    })
-    .await?;
-    db.use_ns(&args.namespace).use_db(&args.database).await?;
-
-    let mut tables = Generator::process(&mut db)
-        .await?
-        .into_iter()
-        .filter(|(name, _)| name != &args.metadata_table_name)
-        .collect();
-
-    println!();
-
-    if args.store_in_db {
-        meta::store_tables(&mut db, &args.metadata_table_name, &mut tables).await?;
-    }
-
-    if !args.skip_ts_generation {
-        ts::write_tables(&args.output, &mut tables, args.store_in_db)?;
-    }
-
-    println!("\nAll operations done ✅");
-
-    Ok(())
-}
+use crate::parser;
 
 #[derive(Deserialize, Debug)]
-struct DatabaseInfo {
+pub struct DatabaseInfo {
     tables: BTreeMap<String, String>,
 }
 
 #[derive(Deserialize, Debug)]
-struct TableInfo {
+pub struct TableInfo {
     fields: BTreeMap<String, String>,
 }
 
-struct Generator {
+pub struct Generator {
     tables: Tables,
 }
 
+#[derive(Error, Debug)]
+pub enum GeneratorError {
+    #[error("Querying the database was unsuccessful")]
+    DatabaseError(#[from] surrealdb::Error),
+    #[error("Failed to parse a Surql statement")]
+    ParsingError(#[from] nom::Err<nom::error::Error<String>>),
+    #[error("Failed to process one of the tables field")]
+    FieldProcessError(#[from] FieldTreeError),
+    #[error("Array item reached before the array")]
+    ArrayProcessError,
+}
+
 impl Generator {
-    pub async fn process(db: &mut Surreal<Any>) -> anyhow::Result<Tables> {
+    pub async fn process(db: &mut Surreal<Any>) -> Result<Tables, GeneratorError> {
         let mut generator = Self {
             tables: BTreeMap::new(),
         };
@@ -136,7 +54,7 @@ impl Generator {
         db: &mut Surreal<Any>,
         name: &str,
         definition: &str,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), GeneratorError> {
         println!("Processing table: {name}");
 
         let info: Option<TableInfo> = db
@@ -164,7 +82,11 @@ impl Generator {
         Ok(())
     }
 
-    fn process_field(tree: &mut FieldTree, path: &str, definition: &str) -> anyhow::Result<()> {
+    fn process_field(
+        tree: &mut FieldTree,
+        path: &str,
+        definition: &str,
+    ) -> Result<(), GeneratorError> {
         let field = FieldTree::from(definition)?;
         let normalized_path = path.replace("[*]", ""); // removing array item decorators, since they are not separate fields
 
@@ -181,10 +103,10 @@ impl Generator {
         tree: &mut FieldTree,
         parent_path: &str,
         field: FieldTree,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), GeneratorError> {
         let parent = tree
             .get_mut(parent_path)
-            .ok_or(Error::msg("Array item reached before the array"))?;
+            .ok_or(GeneratorError::ArrayProcessError)?;
 
         match &mut parent.r#type {
             FieldType::Leaf(parent_leaf) => match field.r#type {
@@ -210,20 +132,28 @@ impl Generator {
     }
 }
 
-type Tables = BTreeMap<String, FieldTree>;
-type Fields = BTreeMap<String, FieldTree>;
+pub type Tables = BTreeMap<String, FieldTree>;
+pub type Fields = BTreeMap<String, FieldTree>;
+
+#[derive(Debug, Error)]
+pub enum FieldTreeError {
+    #[error("Failed to parse a field definition surql statement")]
+    ParsingError(#[from] nom::Err<nom::error::Error<String>>),
+    #[error("One of the parents is missing from the tree")]
+    InsertError,
+}
 
 #[derive(Debug)]
 pub struct FieldTree {
-    is_optional: bool,
-    is_array: bool,
-    comment: Option<String>,
-    r#type: FieldType,
+    pub is_optional: bool,
+    pub is_array: bool,
+    pub comment: Option<String>,
+    pub r#type: FieldType,
 }
 
 #[allow(dead_code)]
 impl FieldTree {
-    pub fn from(definition: &str) -> anyhow::Result<Self> {
+    pub fn from(definition: &str) -> Result<Self, FieldTreeError> {
         let (remaining, raw_type) =
             parser::parse_type_from_definition(definition).map_err(|err| err.to_owned())?;
 
@@ -249,12 +179,12 @@ impl FieldTree {
         Ok(field)
     }
 
-    fn insert(&mut self, path: &str, field: FieldTree) -> anyhow::Result<()> {
+    fn insert(&mut self, path: &str, field: FieldTree) -> Result<(), FieldTreeError> {
         let (parent, key) = match path.rsplit_once('.') {
             Some((parent_path, last_step)) => {
-                let parent = self.get_mut(parent_path).ok_or(anyhow::Error::msg(
-                    "One of the parents is missing from the tree",
-                ))?;
+                let parent = self
+                    .get_mut(parent_path)
+                    .ok_or(FieldTreeError::InsertError)?;
 
                 (parent, last_step)
             }
@@ -292,14 +222,14 @@ pub enum FieldType {
 }
 
 impl FieldType {
-    fn as_node(&self) -> &Node {
+    pub fn as_node(&self) -> &Node {
         match self {
             Self::Node(node) => node,
             Self::Leaf(_) => panic!("Tried to use FieldType::Leaf as FieldType::Node"),
         }
     }
 
-    fn as_node_mut(&mut self) -> &mut Node {
+    pub fn as_node_mut(&mut self) -> &mut Node {
         match self {
             Self::Node(node) => node,
             Self::Leaf(_) => panic!("Tried to use FieldType::Leaf as FieldType::Node"),
@@ -309,11 +239,11 @@ impl FieldType {
 
 #[derive(Debug)]
 pub struct Node {
-    fields: Fields,
+    pub fields: Fields,
 }
 
 #[derive(Debug)]
 pub struct Leaf {
-    name: String,
-    is_record: bool,
+    pub name: String,
+    pub is_record: bool,
 }
