@@ -37,7 +37,7 @@ Usage: npx surreal-ts@latest [OPTIONS] -n <NAMESPACE> -d <DATABASE>
 
 Options:
   -c, --connection-url <CONNECTION_URL>
-          The connection url to the SurrealDB instance [default: localhost:8000]
+          The connection url to the SurrealDB instance [default: http://localhost:8000]
   -u, --username <USERNAME>
           The root username for the SurrealDB instance [default: root]
   -p, --password <PASSWORD>
