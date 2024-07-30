@@ -278,11 +278,7 @@ impl FieldTree {
                 return None;
             };
 
-            let Some(field) = node.fields.get_mut(step) else {
-                return None;
-            };
-
-            cursor = field
+            cursor = node.fields.get_mut(step)?
         }
 
         Some(cursor)

@@ -1,8 +1,5 @@
 use serde::{Deserialize, Serialize};
-use surrealdb::{
-    engine::{any::Any, remote::ws::Client},
-    Surreal,
-};
+use surrealdb::{engine::any::Any, Surreal};
 
 use crate::{FieldTree, FieldType, Fields, Tables};
 
@@ -13,12 +10,14 @@ pub async fn store_tables(
 ) -> anyhow::Result<()> {
     println!("Writing table metadata into database...");
 
-    db.query(format!("
+    db.query(format!(
+        "
         REMOVE TABLE {metadata_table_name};
         DEFINE TABLE {metadata_table_name} SCHEMALESS
             PERMISSIONS
                 FOR select FULL;
-    "))
+    "
+    ))
     .await?;
 
     for (name, table) in tables {
