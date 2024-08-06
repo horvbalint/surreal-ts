@@ -19,9 +19,8 @@ pub struct TableInfo {
     fields: BTreeMap<String, String>,
 }
 
-pub struct Generator<C: Connection> {
+pub struct Generator {
     tables: Tables,
-    connection_type: PhantomData<C>,
 }
 
 #[derive(Error, Debug)]
@@ -36,11 +35,10 @@ pub enum GeneratorError {
     ArrayProcessError,
 }
 
-impl<C: Connection> Generator<C> {
-    pub async fn process(db: &mut Surreal<C>) -> Result<Tables, GeneratorError> {
+impl Generator {
+    pub async fn process<C: Connection>(db: &mut Surreal<C>) -> Result<Tables, GeneratorError> {
         let mut generator = Self {
             tables: BTreeMap::new(),
-            connection_type: PhantomData,
         };
 
         let info: Option<DatabaseInfo> = db.query("INFO FOR DB").await?.take(0)?;
@@ -53,7 +51,7 @@ impl<C: Connection> Generator<C> {
         Ok(generator.tables)
     }
 
-    async fn process_table(
+    async fn process_table<C: Connection>(
         &mut self,
         db: &mut Surreal<C>,
         name: &str,
