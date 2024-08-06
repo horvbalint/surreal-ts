@@ -1,7 +1,7 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, marker::PhantomData};
 
 use serde::Deserialize;
-use surrealdb::{engine::any::Any, Surreal};
+use surrealdb::{Connection, Surreal};
 use thiserror::Error;
 
 use crate::{
@@ -19,8 +19,9 @@ pub struct TableInfo {
     fields: BTreeMap<String, String>,
 }
 
-pub struct Generator {
+pub struct Generator<C: Connection> {
     tables: Tables,
+    connection_type: PhantomData<C>,
 }
 
 #[derive(Error, Debug)]
@@ -35,10 +36,11 @@ pub enum GeneratorError {
     ArrayProcessError,
 }
 
-impl Generator {
-    pub async fn process(db: &mut Surreal<Any>) -> Result<Tables, GeneratorError> {
+impl<C: Connection> Generator<C> {
+    pub async fn process(db: &mut Surreal<C>) -> Result<Tables, GeneratorError> {
         let mut generator = Self {
             tables: BTreeMap::new(),
+            connection_type: PhantomData,
         };
 
         let info: Option<DatabaseInfo> = db.query("INFO FOR DB").await?.take(0)?;
@@ -53,7 +55,7 @@ impl Generator {
 
     async fn process_table(
         &mut self,
-        db: &mut Surreal<Any>,
+        db: &mut Surreal<C>,
         name: &str,
         definition: &str,
     ) -> Result<(), GeneratorError> {
