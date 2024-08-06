@@ -1,3 +1,5 @@
+mod tests;
+
 use std::collections::BTreeMap;
 use thiserror::Error;
 
@@ -13,7 +15,7 @@ pub enum FieldTreeError {
     InsertError,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FieldTree {
     pub is_optional: bool,
     pub is_array: bool,
@@ -85,7 +87,7 @@ impl FieldTree {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FieldType {
     Node(Node),
     Leaf(Leaf),
@@ -107,12 +109,12 @@ impl FieldType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Node {
     pub fields: Fields,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Leaf {
     pub name: String,
     pub is_record: bool,
