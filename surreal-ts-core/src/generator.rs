@@ -134,8 +134,10 @@ impl Generator {
                 }
             },
             FieldType::Node(_) => {
-                // Using the [*] operator on objects does not seem valid
-                unimplemented!("If you encounter this message, please open an issue at: https://github.com/horvbalint/surreal-ts/issues");
+                *parent = FieldTree {
+                    is_array: true,
+                    ..field
+                };
             }
         }
 
