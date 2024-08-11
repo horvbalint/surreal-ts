@@ -58,11 +58,11 @@ fn write_table(
         is_array: false,
         comment: None,
         r#type: FieldType::Leaf(Leaf {
-            name: "string",
+            name: "string".to_string(),
             is_record: false,
         }),
     };
-    fields.insert("id", field);
+    fields.insert("id".to_string(), field);
 
     write_object(file, fields, from_db, 0)?;
 

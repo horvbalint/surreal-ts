@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use crate::parser;
 
-pub type Fields<'a> = BTreeMap<&'a str, FieldTree<'a>>;
+pub type Fields = BTreeMap<String, FieldTree>;
 
 #[derive(Debug, Error, PartialEq)]
 pub enum FieldTreeError {
@@ -16,18 +16,19 @@ pub enum FieldTreeError {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct FieldTree<'a> {
+pub struct FieldTree {
     pub is_optional: bool,
     pub is_array: bool,
-    pub comment: Option<&'a str>,
-    pub r#type: FieldType<'a>,
+    pub comment: Option<String>,
+    pub r#type: FieldType,
 }
 
-#[allow(dead_code)]
-impl<'a> FieldTree<'a> {
-    pub fn from(definition: &'a str) -> Result<Self, FieldTreeError> {
+impl TryFrom<String> for FieldTree {
+    type Error = FieldTreeError;
+
+    fn try_from(definition: String) -> Result<Self, Self::Error> {
         let (remaining, raw_type) =
-            parser::parse_type_from_definition(definition).map_err(|err| err.to_owned())?;
+            parser::parse_type_from_definition(&definition).map_err(|err| err.to_owned())?;
 
         let (_, props) = parser::parse_type(raw_type).map_err(|err| err.to_owned())?;
         let (_, comment) = parser::parse_comment(remaining).map_err(|err| err.to_owned())?;
@@ -35,14 +36,14 @@ impl<'a> FieldTree<'a> {
         let field = Self {
             is_array: props.is_array,
             is_optional: props.is_optional,
-            comment,
+            comment: comment.map(|c| c.to_string()),
             r#type: if props.name == "object" {
                 FieldType::Node(Node {
                     fields: BTreeMap::new(),
                 })
             } else {
                 FieldType::Leaf(Leaf {
-                    name: props.name,
+                    name: props.name.to_string(),
                     is_record: props.is_record,
                 })
             },
@@ -50,15 +51,26 @@ impl<'a> FieldTree<'a> {
 
         Ok(field)
     }
+}
 
-    pub fn insert(&mut self, path: &'a str, field: FieldTree<'a>) -> Result<(), FieldTreeError> {
+impl TryFrom<&str> for FieldTree {
+    type Error = FieldTreeError;
+
+    fn try_from(definition: &str) -> Result<Self, Self::Error> {
+        definition.to_string().try_into()
+    }
+}
+
+#[allow(dead_code)]
+impl FieldTree {
+    pub fn insert(&mut self, path: String, field: FieldTree) -> Result<(), FieldTreeError> {
         let (parent, key) = match path.rsplit_once('.') {
             Some((parent_path, last_step)) => {
                 let parent = self
                     .get_mut(parent_path)
                     .ok_or(FieldTreeError::InsertError)?;
 
-                (parent, last_step)
+                (parent, last_step.to_string())
             }
             None => (self, path),
         };
@@ -68,7 +80,7 @@ impl<'a> FieldTree<'a> {
         Ok(())
     }
 
-    pub fn get_mut<'b>(&'b mut self, path: &str) -> Option<&'b mut FieldTree<'a>> {
+    pub fn get_mut<'b>(&'b mut self, path: &str) -> Option<&'b mut FieldTree> {
         let mut cursor = self;
 
         for step in path.split('.') {
@@ -84,12 +96,12 @@ impl<'a> FieldTree<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub enum FieldType<'a> {
-    Node(Node<'a>),
-    Leaf(Leaf<'a>),
+pub enum FieldType {
+    Node(Node),
+    Leaf(Leaf),
 }
 
-impl<'a> FieldType<'a> {
+impl FieldType {
     pub fn as_node(&self) -> &Node {
         match self {
             Self::Node(node) => node,
@@ -97,7 +109,7 @@ impl<'a> FieldType<'a> {
         }
     }
 
-    pub fn as_node_mut(&mut self) -> &mut Node<'a> {
+    pub fn as_node_mut(&mut self) -> &mut Node {
         match self {
             Self::Node(node) => node,
             Self::Leaf(_) => panic!("Tried to use FieldType::Leaf as FieldType::Node"),
@@ -106,12 +118,12 @@ impl<'a> FieldType<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default, Clone)]
-pub struct Node<'a> {
-    pub fields: Fields<'a>,
+pub struct Node {
+    pub fields: Fields,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct Leaf<'a> {
-    pub name: &'a str,
+pub struct Leaf {
+    pub name: String,
     pub is_record: bool,
 }

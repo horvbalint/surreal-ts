@@ -6,7 +6,7 @@ use surreal_ts_core::{FieldTree, FieldType, Fields, Tables};
 pub async fn store_tables<C: Connection>(
     db: &mut Surreal<C>,
     metadata_table_name: &str,
-    tables: &mut Tables,
+    tables: &Tables,
 ) -> anyhow::Result<()> {
     println!("Writing table metadata into database...");
 
@@ -35,32 +35,32 @@ struct Record {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TableMeta<'a> {
-    name: &'a str,
-    fields: Vec<FieldMeta<'a>>,
+struct TableMeta {
+    name: String,
+    fields: Vec<FieldMeta>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    comment: Option<&'a str>,
+    comment: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct FieldMeta<'a> {
-    name: &'a str,
+struct FieldMeta {
+    name: String,
     is_optional: bool,
     is_array: bool,
-    r#type: &'a str,
+    r#type: String,
     #[serde(flatten)]
-    discriminating: DiscriminatingFieldParts<'a>,
+    discriminating: DiscriminatingFieldParts,
     #[serde(skip_serializing_if = "Option::is_none")]
-    comment: Option<&'a str>,
+    comment: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
-enum DiscriminatingFieldParts<'a> {
+enum DiscriminatingFieldParts {
     #[serde(rename_all = "camelCase")]
     SubFields {
-        fields: Vec<FieldMeta<'a>>,
+        fields: Vec<FieldMeta>,
     },
     #[serde(rename_all = "camelCase")]
     Record {
@@ -69,14 +69,14 @@ enum DiscriminatingFieldParts<'a> {
     None {},
 }
 
-async fn store_table<'a, C: Connection>(
+async fn store_table<C: Connection>(
     db: &mut Surreal<C>,
     metadata_table_name: &str,
-    table: &FieldTree<'a>,
+    table: &FieldTree,
     name: &str,
 ) -> anyhow::Result<()> {
     let table_meta = TableMeta {
-        name,
+        name: name.to_string(),
         comment: table.comment.clone(),
         fields: get_fields(&table.r#type.as_node().fields),
     };
@@ -88,29 +88,29 @@ async fn store_table<'a, C: Connection>(
     Ok(())
 }
 
-fn get_fields<'a>(fields: &'a Fields) -> Vec<FieldMeta<'a>> {
+fn get_fields(fields: &Fields) -> Vec<FieldMeta> {
     fields
         .iter()
         .map(|(name, field)| FieldMeta {
-            name,
+            name: name.to_string(),
             is_optional: field.is_optional,
             is_array: field.is_array,
             comment: field.comment.clone(),
-            r#type: calc_field_type(field),
-            discriminating: calc_discriminating_parts(field),
+            r#type: calc_field_type(&field.r#type),
+            discriminating: calc_discriminating_parts(&field.r#type),
         })
         .collect()
 }
 
-fn calc_field_type<'a>(field: &'a FieldTree) -> &'a str {
-    match &field.r#type {
-        FieldType::Node(_) => "object",
-        FieldType::Leaf(leaf) => leaf.name,
+fn calc_field_type(r#type: &FieldType) -> String {
+    match &r#type {
+        FieldType::Node(_) => "object".to_string(),
+        FieldType::Leaf(leaf) => leaf.name.to_string(),
     }
 }
 
-fn calc_discriminating_parts<'a>(field: &'a FieldTree) -> DiscriminatingFieldParts<'a> {
-    match &field.r#type {
+fn calc_discriminating_parts(r#type: &FieldType) -> DiscriminatingFieldParts {
+    match &r#type {
         FieldType::Node(node) => DiscriminatingFieldParts::SubFields {
             fields: get_fields(&node.fields),
         },

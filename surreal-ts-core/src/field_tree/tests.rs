@@ -6,13 +6,13 @@ use maplit::btreemap;
 #[test]
 fn from_basic() {
     assert_eq!(
-        FieldTree::from("DEFINE FIELD test_field ON test_table TYPE number;").unwrap(),
+        FieldTree::try_from("DEFINE FIELD test_field ON test_table TYPE number;").unwrap(),
         FieldTree {
             is_optional: false,
             is_array: false,
             comment: None,
             r#type: FieldType::Leaf(Leaf {
-                name: "number",
+                name: "number".to_string(),
                 is_record: false
             })
         }
@@ -22,13 +22,13 @@ fn from_basic() {
 #[test]
 fn from_optional() {
     assert_eq!(
-        FieldTree::from("DEFINE FIELD test_field ON test_table TYPE option<number>;").unwrap(),
+        FieldTree::try_from("DEFINE FIELD test_field ON test_table TYPE option<number>;").unwrap(),
         FieldTree {
             is_optional: true,
             is_array: false,
             comment: None,
             r#type: FieldType::Leaf(Leaf {
-                name: "number",
+                name: "number".to_string(),
                 is_record: false
             })
         }
@@ -38,13 +38,13 @@ fn from_optional() {
 #[test]
 fn from_array() {
     assert_eq!(
-        FieldTree::from("DEFINE FIELD test_field ON test_table TYPE array<number>;").unwrap(),
+        FieldTree::try_from("DEFINE FIELD test_field ON test_table TYPE array<number>;").unwrap(),
         FieldTree {
             is_optional: false,
             is_array: true,
             comment: None,
             r#type: FieldType::Leaf(Leaf {
-                name: "number",
+                name: "number".to_string(),
                 is_record: false
             })
         }
@@ -54,14 +54,14 @@ fn from_array() {
 #[test]
 fn from_optional_array() {
     assert_eq!(
-        FieldTree::from("DEFINE FIELD test_field ON test_table TYPE option<array<number>>;")
+        FieldTree::try_from("DEFINE FIELD test_field ON test_table TYPE option<array<number>>;")
             .unwrap(),
         FieldTree {
             is_optional: true,
             is_array: true,
             comment: None,
             r#type: FieldType::Leaf(Leaf {
-                name: "number",
+                name: "number".to_string(),
                 is_record: false
             })
         }
@@ -71,7 +71,7 @@ fn from_optional_array() {
 #[test]
 fn from_object() {
     assert_eq!(
-        FieldTree::from("DEFINE FIELD test_field ON test_table TYPE object;").unwrap(),
+        FieldTree::try_from("DEFINE FIELD test_field ON test_table TYPE object;").unwrap(),
         FieldTree {
             is_optional: false,
             is_array: false,
@@ -84,7 +84,7 @@ fn from_object() {
 #[test]
 fn from_optional_object() {
     assert_eq!(
-        FieldTree::from("DEFINE FIELD test_field ON test_table TYPE option<object>;").unwrap(),
+        FieldTree::try_from("DEFINE FIELD test_field ON test_table TYPE option<object>;").unwrap(),
         FieldTree {
             is_optional: true,
             is_array: false,
@@ -97,7 +97,7 @@ fn from_optional_object() {
 #[test]
 fn from_array_object() {
     assert_eq!(
-        FieldTree::from("DEFINE FIELD test_field ON test_table TYPE array<object>;").unwrap(),
+        FieldTree::try_from("DEFINE FIELD test_field ON test_table TYPE array<object>;").unwrap(),
         FieldTree {
             is_optional: false,
             is_array: true,
@@ -110,14 +110,14 @@ fn from_array_object() {
 #[test]
 fn from_basic_with_comment() {
     assert_eq!(
-        FieldTree::from("DEFINE FIELD test_field ON test_table TYPE number COMMENT 'TEST';")
+        FieldTree::try_from("DEFINE FIELD test_field ON test_table TYPE number COMMENT 'TEST';")
             .unwrap(),
         FieldTree {
             is_optional: false,
             is_array: false,
-            comment: Some("TEST"),
+            comment: Some("TEST".to_string()),
             r#type: FieldType::Leaf(Leaf {
-                name: "number",
+                name: "number".to_string(),
                 is_record: false
             })
         }
@@ -127,16 +127,16 @@ fn from_basic_with_comment() {
 #[test]
 fn from_optional_with_comment() {
     assert_eq!(
-        FieldTree::from(
+        FieldTree::try_from(
             "DEFINE FIELD test_field ON test_table TYPE option<number> COMMENT 'TEST';"
         )
         .unwrap(),
         FieldTree {
             is_optional: true,
             is_array: false,
-            comment: Some("TEST"),
+            comment: Some("TEST".to_string()),
             r#type: FieldType::Leaf(Leaf {
-                name: "number",
+                name: "number".to_string(),
                 is_record: false
             })
         }
@@ -146,14 +146,16 @@ fn from_optional_with_comment() {
 #[test]
 fn from_array_with_comment() {
     assert_eq!(
-        FieldTree::from("DEFINE FIELD test_field ON test_table TYPE array<number> COMMENT 'TEST';")
-            .unwrap(),
+        FieldTree::try_from(
+            "DEFINE FIELD test_field ON test_table TYPE array<number> COMMENT 'TEST';"
+        )
+        .unwrap(),
         FieldTree {
             is_optional: false,
             is_array: true,
-            comment: Some("TEST"),
+            comment: Some("TEST".to_string()),
             r#type: FieldType::Leaf(Leaf {
-                name: "number",
+                name: "number".to_string(),
                 is_record: false
             })
         }
@@ -163,16 +165,16 @@ fn from_array_with_comment() {
 #[test]
 fn from_optional_array_with_comment() {
     assert_eq!(
-        FieldTree::from(
+        FieldTree::try_from(
             "DEFINE FIELD test_field ON test_table TYPE option<array<number>> COMMENT 'TEST';"
         )
         .unwrap(),
         FieldTree {
             is_optional: true,
             is_array: true,
-            comment: Some("TEST"),
+            comment: Some("TEST".to_string()),
             r#type: FieldType::Leaf(Leaf {
-                name: "number",
+                name: "number".to_string(),
                 is_record: false
             })
         }
@@ -182,12 +184,12 @@ fn from_optional_array_with_comment() {
 #[test]
 fn from_object_with_comment() {
     assert_eq!(
-        FieldTree::from("DEFINE FIELD test_field ON test_table TYPE object COMMENT 'TEST';")
+        FieldTree::try_from("DEFINE FIELD test_field ON test_table TYPE object COMMENT 'TEST';")
             .unwrap(),
         FieldTree {
             is_optional: false,
             is_array: false,
-            comment: Some("TEST"),
+            comment: Some("TEST".to_string()),
             r#type: FieldType::Node(Node::default())
         }
     );
@@ -207,12 +209,12 @@ fn insert_one_step() {
         is_array: false,
         comment: None,
         r#type: FieldType::Leaf(Leaf {
-            name: "number",
+            name: "number".to_string(),
             is_record: false,
         }),
     };
 
-    tree.insert("test", leaf.clone()).unwrap();
+    tree.insert("test".to_string(), leaf.clone()).unwrap();
     assert_eq!(
         tree,
         FieldTree {
@@ -221,7 +223,7 @@ fn insert_one_step() {
             comment: None,
             r#type: FieldType::Node(Node {
                 fields: btreemap! {
-                    "test" => leaf
+                    "test".to_string() => leaf
                 }
             })
         }
@@ -243,7 +245,7 @@ fn insert_more_step() {
         comment: None,
         r#type: FieldType::Node(Node {
             fields: btreemap! {
-                "test" => inner_node.clone()
+                "test".to_string() => inner_node.clone()
             },
         }),
     };
@@ -253,12 +255,12 @@ fn insert_more_step() {
         is_array: false,
         comment: None,
         r#type: FieldType::Leaf(Leaf {
-            name: "number",
+            name: "number".to_string(),
             is_record: false,
         }),
     };
 
-    tree.insert("test.leaf", leaf.clone()).unwrap();
+    tree.insert("test.leaf".to_string(), leaf.clone()).unwrap();
 
     assert_eq!(
         tree,
@@ -268,10 +270,10 @@ fn insert_more_step() {
             comment: None,
             r#type: FieldType::Node(Node {
                 fields: btreemap! {
-                    "test" => FieldTree {
+                    "test".to_string() => FieldTree {
                         r#type: FieldType::Node(Node {
                             fields: btreemap! {
-                                "leaf" => leaf
+                                "leaf".to_string() => leaf
                             }
                         }),
                         ..inner_node
@@ -296,11 +298,11 @@ fn insert_incorrect_path() {
         is_array: false,
         comment: None,
         r#type: FieldType::Leaf(Leaf {
-            name: "number",
+            name: "number".to_string(),
             is_record: false,
         }),
     };
 
-    let result = tree.insert("test.leaf", leaf);
+    let result = tree.insert("test.leaf".to_string(), leaf);
     assert_eq!(result, Err(FieldTreeError::InsertError));
 }

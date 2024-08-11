@@ -19,7 +19,7 @@ pub struct TableInfo {
     fields: BTreeMap<String, String>,
 }
 
-pub type Tables = BTreeMap<&'static str, FieldTree<'static>>;
+pub type Tables = BTreeMap<String, FieldTree>;
 
 pub struct Generator {
     tables: Tables,
@@ -49,9 +49,8 @@ impl Generator {
 
         let info: Option<DatabaseInfo> = db.query("INFO FOR DB").await?.take(0)?;
         let info = info.expect("Failed to get information of the database.");
-        let info = Box::leak(Box::new(info));
 
-        for (name, definition) in &info.tables {
+        for (name, definition) in info.tables {
             generator.process_table(db, name, definition).await?
         }
 
@@ -61,45 +60,43 @@ impl Generator {
     async fn process_table<C: Connection>(
         &mut self,
         db: &mut Surreal<C>,
-        name: &'static str,
-        definition: &'static str,
+        name: String,
+        definition: String,
     ) -> Result<(), GeneratorError> {
         println!("Processing table: {name}");
 
         let info: Option<TableInfo> = db
             .query(format!("INFO FOR TABLE {name}"))
-            .bind(("table", name))
+            .bind(("table", &name))
             .await?
             .take(0)?;
         let info = info.expect("Failed to get information of the table.");
-        let info = Box::leak(Box::new(info));
 
-        let (_, comment) = parser::parse_comment(definition).map_err(|err| err.to_owned())?;
+        let (_, comment) = parser::parse_comment(&definition).map_err(|err| err.to_owned())?;
 
         let table = self.tables.entry(name).or_insert(FieldTree {
             is_optional: false,
             is_array: false,
-            comment,
+            comment: comment.map(|c| c.to_string()),
             r#type: FieldType::Node(Node {
                 fields: BTreeMap::new(),
             }),
         });
 
-        for path in info.fields.keys() {
-            Self::process_field(table, path, &info.fields[path])?;
+        for (path, definition) in info.fields.into_iter() {
+            Self::process_field(table, path, definition)?;
         }
 
         Ok(())
     }
 
     fn process_field(
-        tree: &mut FieldTree<'static>,
-        path: &'static str,
-        definition: &'static str,
+        tree: &mut FieldTree,
+        path: String,
+        definition: String,
     ) -> Result<(), GeneratorError> {
-        let field = FieldTree::from(definition)?;
+        let field = FieldTree::try_from(definition)?;
         let normalized_path = path.replace("[*]", ""); // removing array item decorators, since they are not separate fields
-        let normalized_path = Box::leak(Box::new(normalized_path));
 
         if path.ends_with("[*]") {
             Self::handle_array_item(tree, &normalized_path, field)?
@@ -111,9 +108,9 @@ impl Generator {
     }
 
     fn handle_array_item(
-        tree: &mut FieldTree<'static>,
+        tree: &mut FieldTree,
         parent_path: &str,
-        field: FieldTree<'static>,
+        field: FieldTree,
     ) -> Result<(), GeneratorError> {
         let parent = tree
             .get_mut(parent_path)
