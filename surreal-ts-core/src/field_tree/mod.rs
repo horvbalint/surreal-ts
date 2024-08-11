@@ -5,9 +5,9 @@ use thiserror::Error;
 
 use crate::parser;
 
-pub type Fields = BTreeMap<String, FieldTree>;
+pub type Fields<'a> = BTreeMap<&'a str, FieldTree<'a>>;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq)]
 pub enum FieldTreeError {
     #[error("Failed to parse a field definition surql statement")]
     ParsingError(#[from] nom::Err<nom::error::Error<String>>),
@@ -15,17 +15,17 @@ pub enum FieldTreeError {
     InsertError,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct FieldTree {
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct FieldTree<'a> {
     pub is_optional: bool,
     pub is_array: bool,
-    pub comment: Option<String>,
-    pub r#type: FieldType,
+    pub comment: Option<&'a str>,
+    pub r#type: FieldType<'a>,
 }
 
 #[allow(dead_code)]
-impl FieldTree {
-    pub fn from(definition: &str) -> Result<Self, FieldTreeError> {
+impl<'a> FieldTree<'a> {
+    pub fn from(definition: &'a str) -> Result<Self, FieldTreeError> {
         let (remaining, raw_type) =
             parser::parse_type_from_definition(definition).map_err(|err| err.to_owned())?;
 
@@ -42,7 +42,7 @@ impl FieldTree {
                 })
             } else {
                 FieldType::Leaf(Leaf {
-                    name: props.name.to_string(),
+                    name: props.name,
                     is_record: props.is_record,
                 })
             },
@@ -51,7 +51,7 @@ impl FieldTree {
         Ok(field)
     }
 
-    pub fn insert(&mut self, path: &str, field: FieldTree) -> Result<(), FieldTreeError> {
+    pub fn insert(&mut self, path: &'a str, field: FieldTree<'a>) -> Result<(), FieldTreeError> {
         let (parent, key) = match path.rsplit_once('.') {
             Some((parent_path, last_step)) => {
                 let parent = self
@@ -63,16 +63,12 @@ impl FieldTree {
             None => (self, path),
         };
 
-        parent
-            .r#type
-            .as_node_mut()
-            .fields
-            .insert(key.to_string(), field);
+        parent.r#type.as_node_mut().fields.insert(key, field);
 
         Ok(())
     }
 
-    pub fn get_mut(&mut self, path: &str) -> Option<&mut FieldTree> {
+    pub fn get_mut<'b>(&'b mut self, path: &str) -> Option<&'b mut FieldTree<'a>> {
         let mut cursor = self;
 
         for step in path.split('.') {
@@ -87,13 +83,13 @@ impl FieldTree {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum FieldType {
-    Node(Node),
-    Leaf(Leaf),
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub enum FieldType<'a> {
+    Node(Node<'a>),
+    Leaf(Leaf<'a>),
 }
 
-impl FieldType {
+impl<'a> FieldType<'a> {
     pub fn as_node(&self) -> &Node {
         match self {
             Self::Node(node) => node,
@@ -101,7 +97,7 @@ impl FieldType {
         }
     }
 
-    pub fn as_node_mut(&mut self) -> &mut Node {
+    pub fn as_node_mut(&mut self) -> &mut Node<'a> {
         match self {
             Self::Node(node) => node,
             Self::Leaf(_) => panic!("Tried to use FieldType::Leaf as FieldType::Node"),
@@ -109,13 +105,13 @@ impl FieldType {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Node {
-    pub fields: Fields,
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default, Clone)]
+pub struct Node<'a> {
+    pub fields: Fields<'a>,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Leaf {
-    pub name: String,
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct Leaf<'a> {
+    pub name: &'a str,
     pub is_record: bool,
 }

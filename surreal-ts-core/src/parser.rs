@@ -85,13 +85,13 @@ pub fn parse_type(input: &str) -> IResult<&str, FieldProps> {
     ))
 }
 
-pub fn parse_comment(input: &str) -> IResult<&str, Option<String>> {
+pub fn parse_comment(input: &str) -> IResult<&str, Option<&str>> {
     let (input, _) = opt(take_until1("COMMENT"))(input)?;
     let (input, res) = opt(tag("COMMENT "))(input)?;
 
     if res.is_some() {
         let (input, comment) = delimited(tag("'"), is_not("'"), tag("'"))(input)?;
-        Ok((input, Some(comment.to_string())))
+        Ok((input, Some(comment)))
     } else {
         Ok((input, None))
     }

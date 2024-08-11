@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, marker::PhantomData};
+use std::collections::BTreeMap;
 
 use serde::Deserialize;
 use surrealdb::{Connection, Surreal};
@@ -19,6 +19,8 @@ pub struct TableInfo {
     fields: BTreeMap<String, String>,
 }
 
+pub type Tables = BTreeMap<&'static str, FieldTree<'static>>;
+
 pub struct Generator {
     tables: Tables,
 }
@@ -36,6 +38,10 @@ pub enum GeneratorError {
 }
 
 impl Generator {
+    fn into_tables(self) -> Tables {
+        self.tables
+    }
+
     pub async fn process<C: Connection>(db: &mut Surreal<C>) -> Result<Tables, GeneratorError> {
         let mut generator = Self {
             tables: BTreeMap::new(),
@@ -43,19 +49,20 @@ impl Generator {
 
         let info: Option<DatabaseInfo> = db.query("INFO FOR DB").await?.take(0)?;
         let info = info.expect("Failed to get information of the database.");
+        let info = Box::leak(Box::new(info));
 
-        for (name, definition) in info.tables {
-            generator.process_table(db, &name, &definition).await?
+        for (name, definition) in &info.tables {
+            generator.process_table(db, name, definition).await?
         }
 
-        Ok(generator.tables)
+        Ok(generator.into_tables())
     }
 
     async fn process_table<C: Connection>(
         &mut self,
         db: &mut Surreal<C>,
-        name: &str,
-        definition: &str,
+        name: &'static str,
+        definition: &'static str,
     ) -> Result<(), GeneratorError> {
         println!("Processing table: {name}");
 
@@ -65,10 +72,11 @@ impl Generator {
             .await?
             .take(0)?;
         let info = info.expect("Failed to get information of the table.");
+        let info = Box::leak(Box::new(info));
 
         let (_, comment) = parser::parse_comment(definition).map_err(|err| err.to_owned())?;
 
-        let table = self.tables.entry(name.to_string()).or_insert(FieldTree {
+        let table = self.tables.entry(name).or_insert(FieldTree {
             is_optional: false,
             is_array: false,
             comment,
@@ -85,26 +93,27 @@ impl Generator {
     }
 
     fn process_field(
-        tree: &mut FieldTree,
-        path: &str,
-        definition: &str,
+        tree: &mut FieldTree<'static>,
+        path: &'static str,
+        definition: &'static str,
     ) -> Result<(), GeneratorError> {
         let field = FieldTree::from(definition)?;
         let normalized_path = path.replace("[*]", ""); // removing array item decorators, since they are not separate fields
+        let normalized_path = Box::leak(Box::new(normalized_path));
 
         if path.ends_with("[*]") {
             Self::handle_array_item(tree, &normalized_path, field)?
         } else {
-            tree.insert(&normalized_path, field)?;
+            tree.insert(normalized_path, field)?;
         }
 
         Ok(())
     }
 
     fn handle_array_item(
-        tree: &mut FieldTree,
+        tree: &mut FieldTree<'static>,
         parent_path: &str,
-        field: FieldTree,
+        field: FieldTree<'static>,
     ) -> Result<(), GeneratorError> {
         let parent = tree
             .get_mut(parent_path)
@@ -133,5 +142,3 @@ impl Generator {
         Ok(())
     }
 }
-
-pub type Tables = BTreeMap<String, FieldTree>;

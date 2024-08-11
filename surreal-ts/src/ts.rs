@@ -58,11 +58,11 @@ fn write_table(
         is_array: false,
         comment: None,
         r#type: FieldType::Leaf(Leaf {
-            name: "string".to_string(),
+            name: "string",
             is_record: false,
         }),
     };
-    fields.insert("id".to_string(), field);
+    fields.insert("id", field);
 
     write_object(file, fields, from_db, 0)?;
 
@@ -124,7 +124,7 @@ fn write_field(
 
 fn write_primitive(
     file: &mut File,
-    name: &String,
+    name: &str,
     is_record: bool,
     from_db: bool,
 ) -> anyhow::Result<()> {

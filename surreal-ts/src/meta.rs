@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use surrealdb::{Connection, Surreal};
+use surrealdb::{sql::Thing, Connection, Surreal};
 
 use surreal_ts_core::{FieldTree, FieldType, Fields, Tables};
 
@@ -27,34 +27,40 @@ pub async fn store_tables<C: Connection>(
     Ok(())
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct TableMeta {
-    name: String,
-    fields: Vec<FieldMeta>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    comment: Option<String>,
+#[derive(Debug, Deserialize)]
+struct Record {
+    #[allow(dead_code)]
+    id: Thing,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct FieldMeta {
-    name: String,
+struct TableMeta<'a> {
+    name: &'a str,
+    fields: Vec<FieldMeta<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    comment: Option<&'a str>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FieldMeta<'a> {
+    name: &'a str,
     is_optional: bool,
     is_array: bool,
-    r#type: String,
+    r#type: &'a str,
     #[serde(flatten)]
-    discriminating: DiscriminatingFieldParts,
+    discriminating: DiscriminatingFieldParts<'a>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    comment: Option<String>,
+    comment: Option<&'a str>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 #[serde(untagged)]
-enum DiscriminatingFieldParts {
+enum DiscriminatingFieldParts<'a> {
     #[serde(rename_all = "camelCase")]
     SubFields {
-        fields: Vec<FieldMeta>,
+        fields: Vec<FieldMeta<'a>>,
     },
     #[serde(rename_all = "camelCase")]
     Record {
@@ -63,30 +69,30 @@ enum DiscriminatingFieldParts {
     None {},
 }
 
-async fn store_table<C: Connection>(
+async fn store_table<'a, C: Connection>(
     db: &mut Surreal<C>,
     metadata_table_name: &str,
-    table: &FieldTree,
+    table: &FieldTree<'a>,
     name: &str,
 ) -> anyhow::Result<()> {
     let table_meta = TableMeta {
-        name: name.to_string(),
+        name,
         comment: table.comment.clone(),
         fields: get_fields(&table.r#type.as_node().fields),
     };
 
-    db.create::<Option<TableMeta>>((metadata_table_name, name))
+    db.create::<Option<Record>>((metadata_table_name, name))
         .content(table_meta)
         .await?;
 
     Ok(())
 }
 
-fn get_fields(fields: &Fields) -> Vec<FieldMeta> {
+fn get_fields<'a>(fields: &'a Fields) -> Vec<FieldMeta<'a>> {
     fields
         .iter()
         .map(|(name, field)| FieldMeta {
-            name: name.to_string(),
+            name,
             is_optional: field.is_optional,
             is_array: field.is_array,
             comment: field.comment.clone(),
@@ -96,14 +102,14 @@ fn get_fields(fields: &Fields) -> Vec<FieldMeta> {
         .collect()
 }
 
-fn calc_field_type(field: &FieldTree) -> String {
+fn calc_field_type<'a>(field: &'a FieldTree) -> &'a str {
     match &field.r#type {
-        FieldType::Node(_) => "object".to_string(),
-        FieldType::Leaf(leaf) => leaf.name.to_string(),
+        FieldType::Node(_) => "object",
+        FieldType::Leaf(leaf) => leaf.name,
     }
 }
 
-fn calc_discriminating_parts(field: &FieldTree) -> DiscriminatingFieldParts {
+fn calc_discriminating_parts<'a>(field: &'a FieldTree) -> DiscriminatingFieldParts<'a> {
     match &field.r#type {
         FieldType::Node(node) => DiscriminatingFieldParts::SubFields {
             fields: get_fields(&node.fields),
