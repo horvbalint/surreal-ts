@@ -21,6 +21,11 @@ Surreal-ts is a simple to use typescript type definition generator for SurrealDB
 - nested objects
 - complex types (eg.: **option\<array\<record\<table\>\>\>**).
 
+## Compatibility
+I try to keep this package up-to-date, because I am using it myself, but I can't always keep-up with the braking changes. If you find that surreal-ts is not working for you, please open an issue.
+
+Latest SurrealDB version tested: `2.0.3`
+
 
 ## Installation
 Surreal-ts is a CLI tool written in Rust, but it is also published on npm, so it can be easily installed/started with: ```npx surreal-ts```.
