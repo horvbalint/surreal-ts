@@ -139,11 +139,7 @@ impl Generator {
     ) -> anyhow::Result<()> {
         println!("Processing table: {name}");
 
-        let info: Option<TableInfo> = db
-            .query(format!("INFO FOR TABLE {name}"))
-            .bind(("table", name))
-            .await?
-            .take(0)?;
+        let info: Option<TableInfo> = db.query(format!("INFO FOR TABLE {name}")).await?.take(0)?;
         let info = info.expect("Failed to get information of the table.");
 
         let (_, comment) = parser::parse_comment(definition).map_err(|err| err.to_owned())?;
