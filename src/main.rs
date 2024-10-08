@@ -17,15 +17,16 @@
 use core::panic;
 use std::collections::BTreeMap;
 
-use anyhow::Error;
 use clap::Parser;
 use serde::Deserialize;
+use surrealdb::sql::statements::{DefineFieldStatement, DefineTableStatement};
+use surrealdb::sql::{statements::DefineStatement, Query, Statement};
 use surrealdb::{engine::any::Any, opt::auth::Root, Surreal};
 
 use surrealdb::syn::parser::Parser as SurrealParser;
 
-mod meta;
-mod parser;
+// mod meta;
+// mod parser;
 mod ts;
 
 /// A simple typescript definition generator for SurrealDB
@@ -83,23 +84,23 @@ async fn main() -> anyhow::Result<()> {
     .await?;
     db.use_ns(&args.namespace).use_db(&args.database).await?;
 
-    let mut tables = Generator::process(&mut db)
-        .await?
-        .into_iter()
-        .filter(|(name, _)| name != &args.metadata_table_name)
-        .collect();
+    let tables = get_tables_for_db(&mut db).await?;
+    //     .await?
+    //     .into_iter()
+    //     .filter(|(name, _)| name != &args.metadata_table_name)
+    //     .collect();
 
-    println!();
+    // println!();
 
-    if args.store_in_db {
-        meta::store_tables(&mut db, &args.metadata_table_name, &mut tables).await?;
-    }
+    // if args.store_in_db {
+    //     meta::store_tables(&mut db, &args.metadata_table_name, &mut tables).await?;
+    // }
 
     if !args.skip_ts_generation {
-        ts::write_tables(&args.output, &mut tables, args.store_in_db)?;
+        ts::write_tables(&args.output, &tables, args.store_in_db)?;
     }
 
-    println!("\nAll operations done ✅");
+    // println!("\nAll operations done ✅");
 
     Ok(())
 }
@@ -114,217 +115,62 @@ struct TableInfo {
     fields: BTreeMap<String, String>,
 }
 
-struct Generator {
-    tables: Tables,
+#[derive(Debug)]
+struct Table {
+    table: DefineTableStatement,
+    fields: Vec<DefineFieldStatement>,
 }
 
-impl Generator {
-    pub async fn process(db: &mut Surreal<Any>) -> anyhow::Result<Tables> {
-        let mut generator = Self {
-            tables: BTreeMap::new(),
+async fn get_tables_for_db(db: &mut Surreal<Any>) -> anyhow::Result<Vec<Table>> {
+    let mut tables = vec![];
+
+    let info: Option<DatabaseInfo> = db.query("INFO FOR DB").await?.take(0)?;
+    let info = info.expect("Failed to get information of the database.");
+
+    let every_table = info.tables.into_values().collect::<Vec<_>>().join(";\n");
+    let result = parse_sql(&every_table);
+
+    for stmt in result {
+        let Statement::Define(DefineStatement::Table(table)) = stmt else {
+            panic!("Database table list contained define statement for not table.")
         };
 
-        let info: Option<DatabaseInfo> = db.query("INFO FOR DB").await?.take(0)?;
-        let info = info.expect("Failed to get information of the database.");
+        let fields = get_fields_for_table(db, &table.name).await?;
 
-        for (name, definition) in info.tables {
-            generator.process_table(db, &name, &definition).await?
-        }
-
-        Ok(generator.tables)
+        tables.push(Table { table, fields });
     }
 
-    async fn process_table(
-        &mut self,
-        db: &mut Surreal<Any>,
-        name: &str,
-        definition: &str,
-    ) -> anyhow::Result<()> {
-        println!("Processing table: {name}");
-
-        let info: Option<TableInfo> = db.query(format!("INFO FOR TABLE {name}")).await?.take(0)?;
-        let info = info.expect("Failed to get information of the table.");
-
-        let every_field = info.fields.into_values().collect::<Vec<_>>().join(";\n");
-        println!("{every_field:#?}");
-
-        let mut parser = SurrealParser::new(every_field.as_bytes());
-
-        let mut stack = reblessive::Stack::new();
-        let result = stack.enter(|ctx| parser.parse_query(ctx)).finish().unwrap();
-
-        dbg!(result);
-
-        // let (_, comment) = parser::parse_comment(definition).map_err(|err| err.to_owned())?;
-
-        // let table = self.tables.entry(name.to_string()).or_insert(FieldTree {
-        //     is_optional: false,
-        //     is_array: false,
-        //     comment,
-        //     r#type: FieldType::Node(Node {
-        //         fields: BTreeMap::new(),
-        //     }),
-        // });
-
-        // for path in info.fields.keys() {
-        //     Self::process_field(table, path, &info.fields[path])?;
-        // }
-
-        Ok(())
-    }
-
-    fn process_field(tree: &mut FieldTree, path: &str, definition: &str) -> anyhow::Result<()> {
-        let field = FieldTree::from(definition)?;
-        let normalized_path = path.replace("[*]", ""); // removing array item decorators, since they are not separate fields
-
-        if path.ends_with("[*]") {
-            Self::handle_array_item(tree, &normalized_path, field)?
-        } else {
-            tree.insert(&normalized_path, field)?;
-        }
-
-        Ok(())
-    }
-
-    fn handle_array_item(
-        tree: &mut FieldTree,
-        parent_path: &str,
-        field: FieldTree,
-    ) -> anyhow::Result<()> {
-        let parent = tree
-            .get_mut(parent_path)
-            .ok_or(Error::msg("Array item reached before the array"))?;
-
-        match &mut parent.r#type {
-            FieldType::Leaf(parent_leaf) => match field.r#type {
-                FieldType::Leaf(item_leaf) => {
-                    parent.is_array = true;
-                    parent_leaf.name = item_leaf.name;
-                    parent_leaf.is_record = item_leaf.is_record;
-                }
-                FieldType::Node(_) => {
-                    *parent = FieldTree {
-                        is_array: true,
-                        ..field
-                    }
-                }
-            },
-            FieldType::Node(_) => {
-                dbg!(field);
-                dbg!(parent);
-                // Using the [*] operator on objects does not seem valid
-                unimplemented!("If you encounter this message, please open an issue at: https://github.com/horvbalint/surreal-ts/issues");
-            }
-        }
-
-        Ok(())
-    }
+    Ok(tables)
 }
 
-type Tables = BTreeMap<String, FieldTree>;
-type Fields = BTreeMap<String, FieldTree>;
+async fn get_fields_for_table(
+    db: &mut Surreal<Any>,
+    table: &str,
+) -> anyhow::Result<Vec<DefineFieldStatement>> {
+    let mut fields = vec![];
 
-#[derive(Debug)]
-pub struct FieldTree {
-    is_optional: bool,
-    is_array: bool,
-    comment: Option<String>,
-    r#type: FieldType,
-}
+    let info: Option<TableInfo> = db.query(format!("INFO FOR TABLE {table}")).await?.take(0)?;
+    let info = info.expect("Failed to get information of the database.");
 
-#[allow(dead_code)]
-impl FieldTree {
-    pub fn from(definition: &str) -> anyhow::Result<Self> {
-        let (remaining, raw_type) =
-            parser::parse_type_from_definition(definition).map_err(|err| err.to_owned())?;
+    let every_field = info.fields.into_values().collect::<Vec<_>>().join(";\n");
+    let result = parse_sql(&every_field);
 
-        let (_, props) = parser::parse_type(raw_type).map_err(|err| err.to_owned())?;
-        let (_, comment) = parser::parse_comment(remaining).map_err(|err| err.to_owned())?;
-
-        let field = Self {
-            is_array: props.is_array,
-            is_optional: props.is_optional,
-            comment,
-            r#type: if props.name == "object" {
-                FieldType::Node(Node {
-                    fields: BTreeMap::new(),
-                })
-            } else {
-                FieldType::Leaf(Leaf {
-                    name: props.name.to_string(),
-                    is_record: props.is_record,
-                })
-            },
+    for stmt in result {
+        let Statement::Define(DefineStatement::Field(field)) = stmt else {
+            panic!("The field list of table '{table}' contained define statement for not field.")
         };
 
-        Ok(field)
+        fields.push(field);
     }
 
-    fn insert(&mut self, path: &str, field: FieldTree) -> anyhow::Result<()> {
-        let (parent, key) = match path.rsplit_once('.') {
-            Some((parent_path, last_step)) => {
-                let parent = self.get_mut(parent_path).ok_or(anyhow::Error::msg(
-                    "One of the parents is missing from the tree",
-                ))?;
-
-                (parent, last_step)
-            }
-            None => (self, path),
-        };
-
-        parent
-            .r#type
-            .as_node_mut()
-            .fields
-            .insert(key.to_string(), field);
-
-        Ok(())
-    }
-
-    fn get_mut(&mut self, path: &str) -> Option<&mut FieldTree> {
-        let mut cursor = self;
-
-        for step in path.split('.') {
-            let FieldType::Node(node) = &mut cursor.r#type else {
-                return None;
-            };
-
-            cursor = node.fields.get_mut(step)?
-        }
-
-        Some(cursor)
-    }
+    Ok(fields)
 }
 
-#[derive(Debug)]
-pub enum FieldType {
-    Node(Node),
-    Leaf(Leaf),
-}
+fn parse_sql(sql: &str) -> Query {
+    let mut parser = SurrealParser::new(sql.as_bytes());
 
-impl FieldType {
-    fn as_node(&self) -> &Node {
-        match self {
-            Self::Node(node) => node,
-            Self::Leaf(_) => panic!("Tried to use FieldType::Leaf as FieldType::Node"),
-        }
-    }
+    let mut stack = reblessive::Stack::new();
+    let result = stack.enter(|ctx| parser.parse_query(ctx)).finish().unwrap();
 
-    fn as_node_mut(&mut self) -> &mut Node {
-        match self {
-            Self::Node(node) => node,
-            Self::Leaf(_) => panic!("Tried to use FieldType::Leaf as FieldType::Node"),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Node {
-    fields: Fields,
-}
-
-#[derive(Debug)]
-pub struct Leaf {
-    name: String,
-    is_record: bool,
+    result
 }
