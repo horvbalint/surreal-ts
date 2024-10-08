@@ -22,9 +22,12 @@ use clap::Parser;
 use serde::Deserialize;
 use surrealdb::{engine::any::Any, opt::auth::Root, Surreal};
 
+use surrealdb::syn::parser::Parser as SurrealParser;
+
 mod meta;
 mod parser;
 mod ts;
+
 /// A simple typescript definition generator for SurrealDB
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -142,20 +145,30 @@ impl Generator {
         let info: Option<TableInfo> = db.query(format!("INFO FOR TABLE {name}")).await?.take(0)?;
         let info = info.expect("Failed to get information of the table.");
 
-        let (_, comment) = parser::parse_comment(definition).map_err(|err| err.to_owned())?;
+        let every_field = info.fields.into_values().collect::<Vec<_>>().join(";\n");
+        println!("{every_field:#?}");
 
-        let table = self.tables.entry(name.to_string()).or_insert(FieldTree {
-            is_optional: false,
-            is_array: false,
-            comment,
-            r#type: FieldType::Node(Node {
-                fields: BTreeMap::new(),
-            }),
-        });
+        let mut parser = SurrealParser::new(every_field.as_bytes());
 
-        for path in info.fields.keys() {
-            Self::process_field(table, path, &info.fields[path])?;
-        }
+        let mut stack = reblessive::Stack::new();
+        let result = stack.enter(|ctx| parser.parse_query(ctx)).finish().unwrap();
+
+        dbg!(result);
+
+        // let (_, comment) = parser::parse_comment(definition).map_err(|err| err.to_owned())?;
+
+        // let table = self.tables.entry(name.to_string()).or_insert(FieldTree {
+        //     is_optional: false,
+        //     is_array: false,
+        //     comment,
+        //     r#type: FieldType::Node(Node {
+        //         fields: BTreeMap::new(),
+        //     }),
+        // });
+
+        // for path in info.fields.keys() {
+        //     Self::process_field(table, path, &info.fields[path])?;
+        // }
 
         Ok(())
     }
@@ -197,6 +210,8 @@ impl Generator {
                 }
             },
             FieldType::Node(_) => {
+                dbg!(field);
+                dbg!(parent);
                 // Using the [*] operator on objects does not seem valid
                 unimplemented!("If you encounter this message, please open an issue at: https://github.com/horvbalint/surreal-ts/issues");
             }
