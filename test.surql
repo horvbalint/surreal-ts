@@ -84,8 +84,7 @@ DEFINE FIELD double_qoute_comment ON with_comment TYPE string COMMENT "double qo
 DEFINE FIELD not_end_comment ON with_comment TYPE string COMMENT "not end comment" DEFAULT "comment";
 DEFINE FIELD small_cased_comment ON with_comment TYPE string comment "small cased comment";
 DEFINE FIELD no_comment ON with_comment TYPE string;
-// These cases are not yet handled
-// DEFINE FIELD comment_using_single_qoute ON with_comment TYPE string comment "comment using the ' character";
-// DEFINE FIELD comment_using_double_qoute ON with_comment TYPE string comment 'comment using the " character';
+DEFINE FIELD comment_using_single_qoute ON with_comment TYPE string comment "comment using the ' character";
+DEFINE FIELD comment_using_double_qoute ON with_comment TYPE string comment 'comment using the " character';
 
 COMMIT TRANSACTION;
