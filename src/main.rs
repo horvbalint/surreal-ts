@@ -74,9 +74,7 @@ struct CliArgs {
 async fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
 
-    // let mut db = connect_to_db(&args.connection_url).await?;
     let mut db = surrealdb::engine::any::connect(&args.connection_url).await?;
-
     db.signin(Root {
         username: &args.username,
         password: &args.password,
@@ -85,22 +83,14 @@ async fn main() -> anyhow::Result<()> {
     db.use_ns(&args.namespace).use_db(&args.database).await?;
 
     let tables = get_tables_for_db(&mut db).await?;
-    //     .await?
-    //     .into_iter()
-    //     .filter(|(name, _)| name != &args.metadata_table_name)
-    //     .collect();
-
-    // println!();
-
+    if !args.skip_ts_generation {
+        ts::write_tables(&args.output, &tables, args.store_in_db)?;
+    }
     // if args.store_in_db {
     //     meta::store_tables(&mut db, &args.metadata_table_name, &mut tables).await?;
     // }
 
-    if !args.skip_ts_generation {
-        ts::write_tables(&args.output, &tables, args.store_in_db)?;
-    }
-
-    // println!("\nAll operations done ✅");
+    println!("\nAll operations done ✅");
 
     Ok(())
 }
@@ -135,8 +125,9 @@ async fn get_tables_for_db(db: &mut Surreal<Any>) -> anyhow::Result<Vec<Table>> 
             panic!("Database table list contained define statement for not table.")
         };
 
-        let fields = get_fields_for_table(db, &table.name).await?;
+        println!("Processing table: {}", table.name);
 
+        let fields = get_fields_for_table(db, &table.name).await?;
         tables.push(Table { table, fields });
     }
 
@@ -150,7 +141,7 @@ async fn get_fields_for_table(
     let mut fields = vec![];
 
     let info: Option<TableInfo> = db.query(format!("INFO FOR TABLE {table}")).await?.take(0)?;
-    let info = info.expect("Failed to get information of the database.");
+    let info = info.expect(&format!("Failed to get information of table {table}."));
 
     let every_field = info.fields.into_values().collect::<Vec<_>>().join(";\n");
     let result = parse_sql(&every_field);

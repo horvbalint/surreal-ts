@@ -18,19 +18,36 @@ DEFINE FIELD number ON schemafull_test TYPE number;
 DEFINE FIELD decimal ON schemafull_test TYPE decimal;
 DEFINE FIELD float ON schemafull_test TYPE float;
 DEFINE FIELD int ON schemafull_test TYPE int;
-DEFINE FIELD geometry ON schemafull_test TYPE geometry<point>;
+DEFINE FIELD literal_either ON schemafull_test TYPE "surreal-ts" | 6;
+DEFINE FIELD literal_string ON schemafull_test TYPE "surreal-ts";
+DEFINE FIELD literal_number ON schemafull_test TYPE 0;
+DEFINE FIELD literal_array ON schemafull_test TYPE ["surreal-ts", 6];
+DEFINE FIELD literal_object ON schemafull_test TYPE {
+  string: string,
+  literal: 'literal',
+  union: 'literal' | 6,
+  object: object,
+  array: array,
+  literal_object: {
+    number: number,
+  } 
+};
 DEFINE FIELD record ON schemafull_test TYPE record<ref_test>;
+DEFINE FIELD array ON schemafull_test TYPE array;
+DEFINE FIELD array_array1 ON schemafull_test TYPE array<array>;
+DEFINE FIELD record_array ON schemafull_test TYPE array<record<ref_test>>;
+DEFINE FIELD either_simple ON schemafull_test TYPE string | bool;
+DEFINE FIELD either_complex ON schemafull_test TYPE record<ref_test> | array<record<ref_test>>;
+DEFINE FIELD either_array ON schemafull_test TYPE array<string | bool>;
 DEFINE FIELD optional_string ON schemafull_test TYPE option<string>;
+DEFINE FIELD only_object ON schemafull_test TYPE object;
 DEFINE FIELD object ON schemafull_test TYPE object;
 DEFINE FIELD object.string ON schemafull_test TYPE string;
 DEFINE FIELD object.optional_string ON schemafull_test TYPE option<string>;
 DEFINE FIELD object_object ON schemafull_test TYPE object;
 DEFINE FIELD object_object.object ON schemafull_test TYPE object;
 DEFINE FIELD object_object.object.string ON schemafull_test TYPE string;
-DEFINE FIELD flexible_object ON schemafull_test FLEXIBLE TYPE object;
-DEFINE FIELD array ON schemafull_test TYPE array;
-DEFINE FIELD array_array1 ON schemafull_test TYPE array<array>;
-DEFINE FIELD array_array2 ON schemafull_test TYPE array;
+-- DEFINE FIELD array_array2 ON schemafull_test TYPE array;
 -- DEFINE FIELD array_array2.* ON schemafull_test TYPE array;
 -- TODO: support any depth array of arrays:
 -- DEFINE FIELD array_array_array1 ON schemafull_test TYPE array<array<array>>;

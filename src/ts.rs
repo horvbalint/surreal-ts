@@ -1,10 +1,12 @@
 use std::fs::File;
 use std::io::Write;
+use std::iter;
 
+use bon::builder;
 use convert_case::{Case, Casing};
 use itertools::Itertools;
 use surrealdb::sql::statements::DefineFieldStatement;
-use surrealdb::sql::Kind;
+use surrealdb::sql::{Kind, Literal};
 
 use crate::Table;
 
@@ -19,7 +21,8 @@ pub fn write_tables(
     tables: &Vec<Table>,
     add_table_meta_types: bool,
 ) -> anyhow::Result<()> {
-    println!("Writing type declaration file...");
+    println!("\nWriting type declaration file...");
+
     let mut file = File::create(output_path)?;
 
     if add_table_meta_types {
@@ -38,17 +41,22 @@ pub fn write_tables(
 
 fn get_table_definition(table: &Table, direction: Direction) -> String {
     let interface_name = create_interface_name(&table.table.name, direction);
-    let fields = get_object_definition(&table.fields, direction, true, "".to_string(), 1);
+    let fields = get_object_definition()
+        .fields(&table.fields)
+        .direction(direction)
+        .add_id(true)
+        .call();
 
     format!("export type {interface_name} = {fields}")
 }
 
+#[builder]
 fn get_object_definition(
     fields: &Vec<DefineFieldStatement>,
     direction: Direction,
-    add_id: bool,
-    prefix: String,
-    depth: usize,
+    #[builder(default = false)] add_id: bool,
+    #[builder(default)] prefix: String,
+    #[builder(default = 1)] depth: usize,
 ) -> String {
     let mut rows = vec!["{".to_string()];
 
@@ -58,26 +66,25 @@ fn get_object_definition(
             Direction::Out => "id: string,".to_string(),
         };
 
-        rows.push(format!("{:indent$}{id}", "", indent = depth * 2));
+        rows.push(format!("{}{id}", indent(depth)));
     }
 
     let mut fields = fields.into_iter();
-    while let Some(field) = fields.next() {
-        let path = field.name.to_string();
+    while let Some(DefineFieldStatement { name, kind, .. }) = &fields.next() {
+        let path = name.to_string();
         let name = path[prefix.len()..].to_string();
 
-        let (ts_type, optional) =
-            get_ts_type(path, field.kind.clone(), direction, &mut fields, depth);
+        let optional = match kind {
+            Some(Kind::Option(_)) => "?",
+            _ => "",
+        };
 
-        rows.push(format!(
-            "{:indent$}{name}{}: {ts_type},",
-            "",
-            if optional { "?" } else { "" },
-            indent = depth * 2
-        ));
+        let ts_type = get_ts_type(path, kind.clone(), direction, &mut fields, depth);
+
+        rows.push(format!("{}{name}{optional}: {ts_type},", indent(depth)));
     }
 
-    rows.push(format!("{:indent$}}}", "", indent = (depth - 1) * 2));
+    rows.push(format!("{}}}", indent(depth - 1)));
 
     rows.join("\n")
 }
@@ -88,81 +95,109 @@ fn get_ts_type<'a>(
     direction: Direction,
     fields: &mut (impl Iterator<Item = &'a DefineFieldStatement> + std::clone::Clone),
     depth: usize,
-) -> (String, bool) {
-    let optional = match kind {
-        Some(Kind::Option(_)) => true,
-        _ => false,
-    };
-
-    let ts_type = match kind {
+) -> String {
+    match kind {
         None => "any".to_string(),
         Some(kind) => match kind {
             Kind::Any => "any".to_string(),
             Kind::Null => "null".to_string(),
             Kind::Bool => "boolean".to_string(),
-            Kind::String => "string".to_string(),
-            Kind::Uuid => "string".to_string(),
-            Kind::Duration => "string".to_string(),
-            Kind::Geometry(_vec) => "string".to_string(),
             Kind::Decimal | Kind::Float | Kind::Int | Kind::Number => "number".to_string(),
+            Kind::String | Kind::Uuid | Kind::Duration => "string".to_string(),
             Kind::Datetime => match direction {
                 Direction::In => "Date | string".to_string(),
                 Direction::Out => "string".to_string(),
             },
-            Kind::Option(kind) => get_ts_type(path, Some(*kind), direction, fields, depth).0,
+            Kind::Option(kind) => get_ts_type(path, Some(*kind), direction, fields, depth),
             Kind::Object => {
                 let prefix = format!("{path}.");
 
-                let subfields = fields
+                let subfields: Vec<_> = fields
                     .take_while_ref(|f| f.name.to_string().starts_with(&prefix))
                     .cloned()
                     .collect();
 
-                get_object_definition(&subfields, direction, false, prefix, depth + 1)
+                if subfields.len() == 0 {
+                    "object".to_string()
+                } else {
+                    get_object_definition()
+                        .fields(&subfields)
+                        .direction(direction)
+                        .prefix(prefix)
+                        .depth(depth + 1)
+                        .call()
+                }
             }
             Kind::Record(vec) => {
                 let record_interface = create_interface_name(&vec[0], direction);
 
                 match direction {
-                    Direction::In => format!("{record_interface}['id']"),
+                    Direction::In => format!("Required<{record_interface}>['id']"),
                     Direction::Out => format!("{record_interface} | {record_interface}['id']"),
                 }
             }
-            Kind::Either(vec) => {
-                let ts_types: Vec<_> = vec
+            Kind::Either(kinds) => {
+                let ts_types: Vec<_> = kinds
                     .into_iter()
-                    .map(|kind| get_ts_type(path.clone(), Some(kind), direction, fields, depth).0)
+                    .map(|kind| get_ts_type(path.clone(), Some(kind), direction, fields, depth))
                     .collect();
 
                 ts_types.join(" | ")
             }
             Kind::Set(_, _) | Kind::Array(_, _) => {
-                let item_definition = fields
-                    .next()
-                    .expect("No array item definition followed the array definitino");
+                let item_ts_type = match fields.next() {
+                    Some(item_definition) => {
+                        get_ts_type(
+                            item_definition.name.to_string(),
+                            item_definition.kind.clone(),
+                            direction,
+                            fields,
+                            depth,
+                        )
+                    },
+                    None => "any".to_string()
+                };
 
-                format!(
-                    "Array<{}>",
-                    get_ts_type(
-                        item_definition.name.to_string(),
-                        item_definition.kind.clone(),
-                        direction,
-                        fields,
-                        depth
-                    )
-                    .0
-                )
+                format!("Array<{item_ts_type}>")
             }
-            // Kind::Literal(_literal) => todo!(),
-            // Kind::Bytes => unimplemented!(),
-            // Kind::Point => unimplemented!(),
-            // Kind::Function(_vec, _kind) => unimplemented!(),
-            // Kind::Range => unimplemented!(),
-            _ => unimplemented!("{path}: {kind:#?}"),
-        },
-    };
+            Kind::Literal(literal) => match literal {
+                Literal::String(string) => string.to_string(),
+                Literal::Number(number) => number.to_string(),
+                Literal::Array(kinds) => {
+                    let ts_types: Vec<_> = kinds
+                    .into_iter()
+                    .map(|kind| get_ts_type(path.clone(), Some(kind), direction, fields, depth))
+                    .collect();
 
-    (ts_type, optional)
+                    format!("[{}]", ts_types.join(", "))
+                },
+                Literal::Object(map) => {
+                    let mut rows = vec!["{".to_string()];
+
+                    for (name, kind) in map {
+                        let optional = match kind {
+                            Kind::Option(_) => "?",
+                            _ => "",
+                        };
+
+                        let ts_type = get_ts_type(name.clone(), Some(kind), direction, &mut iter::empty(), depth);
+
+                        rows.push(format!("{}{name}{optional}: {ts_type},", indent(depth)));
+                    }
+
+                    rows.push(format!("{}}}", indent(depth - 1)));
+
+                    rows.join("\n")
+                },
+                _ => unimplemented!(
+                    "The type of field '{path}' is not yet supported. Please open an issue on github."
+                ),
+            },
+            _ => unimplemented!(
+                "The type of field '{path}' is not yet supported. Please open an issue on github."
+            ),
+        },
+    }
 }
 
 fn create_interface_name(name: &str, direction: Direction) -> String {
@@ -172,4 +207,8 @@ fn create_interface_name(name: &str, direction: Direction) -> String {
         Direction::In => format!("In{pascal_case_name}"),
         Direction::Out => format!("Out{pascal_case_name}"),
     }
+}
+
+fn indent(depth: usize) -> String {
+    "  ".repeat(depth)
 }
