@@ -3136,6 +3136,7 @@ dependencies = [
  "anyhow",
  "clap",
  "convert_case",
+ "itertools 0.13.0",
  "nom",
  "reblessive",
  "serde",
