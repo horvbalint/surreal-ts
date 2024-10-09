@@ -43,40 +43,64 @@ export type FieldMeta = {{
     }
 
     for table in tables {
-        write_table(&mut file, &table, Direction::In)?;
-        write_table(&mut file, &table, Direction::Out)?;
+        let in_definition = get_table_definition(&table, Direction::In);
+        let out_definition = get_table_definition(&table, Direction::Out);
+
+        write!(file, "{in_definition}\n\n{out_definition}\n\n")?;
     }
 
     Ok(())
 }
 
-fn write_table(file: &mut File, table: &Table, direction: Direction) -> anyhow::Result<()> {
+fn get_table_definition(table: &Table, direction: Direction) -> String {
     let interface_name = create_interface_name(&table.table.name, direction);
-    write!(file, "export type {interface_name} = {{")?;
+    let fields = get_object_definition(&table.fields, direction, true);
 
-    write!(file, "\nid: string,")?;
-    write_fields(file, &mut table.fields.iter().peekable(), direction)?;
-
-    write!(file, "\n}}\n\n")?;
-    Ok(())
+    format!("export type {interface_name} = {fields}")
 }
 
-fn write_fields<'a>(
-    file: &mut File,
-    fields: &mut Peekable<impl Iterator<Item = &'a DefineFieldStatement>>,
+fn get_object_definition(
+    fields: &Vec<DefineFieldStatement>,
     direction: Direction,
-) -> anyhow::Result<()> {
+    add_id: bool,
+) -> String {
+    let mut rows = vec!["{".to_string()];
+
+    if add_id {
+        match direction {
+            Direction::In => rows.push("id?: string,".to_string()),
+            Direction::Out => rows.push("id: string,".to_string()),
+        }
+    }
+
+    let mut fields = fields.iter().peekable();
     while let Some(field) = fields.next() {
         let name = field.name.to_string();
-        let ts_type = get_ts_type(field.kind.clone(), direction)?;
+        let (ts_type, optional) =
+            get_ts_type(name.clone(), field.kind.clone(), direction, &mut fields);
 
-        write!(file, "\n{name}: {ts_type},")?;
+        rows.push(format!(
+            "{name}{}: {ts_type},",
+            if optional { "?" } else { "" }
+        ));
     }
 
-    Ok(())
+    rows.push("}".to_string());
+
+    rows.join("\n")
 }
 
-fn get_ts_type(kind: Option<Kind>, direction: Direction) -> anyhow::Result<String> {
+fn get_ts_type<'a>(
+    path: String,
+    kind: Option<Kind>,
+    direction: Direction,
+    fields: &mut Peekable<impl Iterator<Item = &'a DefineFieldStatement>>,
+) -> (String, bool) {
+    let optional = match kind {
+        Some(Kind::Option(_)) => true,
+        _ => false,
+    };
+
     let ts_type = match kind {
         None => "any".to_string(),
         Some(kind) => match kind {
@@ -91,7 +115,9 @@ fn get_ts_type(kind: Option<Kind>, direction: Direction) -> anyhow::Result<Strin
             Kind::Float => "number".to_string(),
             Kind::Int => "number".to_string(),
             Kind::Number => "number".to_string(),
-            Kind::Object => todo!(),
+            Kind::Object => {
+                let subfields = fields.take_while(|f| f.name.to_string().starts_with(&path));
+            }
             Kind::String => "string".to_string(),
             Kind::Uuid => "string".to_string(),
             Kind::Record(vec) => {
@@ -102,17 +128,30 @@ fn get_ts_type(kind: Option<Kind>, direction: Direction) -> anyhow::Result<Strin
                     Direction::Out => format!("{record_interface} | {record_interface}['id']"),
                 }
             }
-            Kind::Option(kind) => format!("{} | undefined", get_ts_type(Some(*kind), direction)?),
+            Kind::Option(kind) => format!(
+                "{} | undefined",
+                get_ts_type(path, Some(*kind), direction, fields).0
+            ),
             Kind::Either(vec) => {
                 let ts_types: Vec<_> = vec
                     .into_iter()
-                    .map(|kind| get_ts_type(Some(kind), direction).unwrap())
+                    .map(|kind| get_ts_type(path, Some(kind), direction, fields).0)
                     .collect();
 
                 ts_types.join(" | ")
             }
-            Kind::Set(kind, _) => format!("Array<{}>", get_ts_type(Some(*kind), direction)?),
-            Kind::Array(kind, _) => format!("Array<{}>", get_ts_type(Some(*kind), direction)?),
+            Kind::Set(kind, _) => {
+                format!(
+                    "Array<{}>",
+                    get_ts_type(path, Some(*kind), direction, fields).0
+                )
+            }
+            Kind::Array(kind, _) => {
+                format!(
+                    "Array<{}>",
+                    get_ts_type(path, Some(*kind), direction, fields).0
+                )
+            }
             Kind::Literal(_literal) => todo!(),
             Kind::Bytes => unimplemented!(),
             Kind::Duration => unimplemented!(),
@@ -124,7 +163,7 @@ fn get_ts_type(kind: Option<Kind>, direction: Direction) -> anyhow::Result<Strin
         },
     };
 
-    Ok(ts_type)
+    (ts_type, optional)
 }
 
 fn create_interface_name(name: &str, direction: Direction) -> String {
@@ -136,7 +175,7 @@ fn create_interface_name(name: &str, direction: Direction) -> String {
     }
 }
 
-// fn write_object(
+// fn get_object_definition(
 //     file: &mut File,
 //     fields: &Fields,
 //     from_db: bool,
@@ -176,7 +215,7 @@ fn create_interface_name(name: &str, direction: Direction) -> String {
 //     }
 
 //     match &field.r#type {
-//         FieldType::Node(node) => write_object(file, &node.fields, from_db, depth + 1)?,
+//         FieldType::Node(node) => get_object_definition(file, &node.fields, from_db, depth + 1)?,
 //         FieldType::Leaf(leaf) => write_primitive(file, &leaf.name, leaf.is_record, from_db)?,
 //     }
 
