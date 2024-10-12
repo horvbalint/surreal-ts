@@ -1,16 +1,9 @@
 use std::fs::File;
 use std::io::Write;
-use std::iter;
 
-use bon::builder;
-use convert_case::{Case, Casing};
-use itertools::Itertools;
-use surrealdb::sql::statements::DefineFieldStatement;
-use surrealdb::sql::{Kind, Literal};
+use crate::{FieldMeta, FieldType, Literal, TableMeta};
 
-use crate::Table;
-
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug)]
 enum Direction {
     In,
     Out,
@@ -18,7 +11,7 @@ enum Direction {
 
 pub fn write_tables(
     output_path: &str,
-    tables: &Vec<Table>,
+    tables: &Vec<TableMeta>,
     add_table_meta_types: bool,
 ) -> anyhow::Result<()> {
     println!("\nWriting type declaration file...");
@@ -39,24 +32,18 @@ pub fn write_tables(
     Ok(())
 }
 
-fn get_table_definition(table: &Table, direction: Direction) -> String {
-    let interface_name = create_interface_name(&table.table.name, direction);
-    let fields = get_object_definition()
-        .fields(&table.fields)
-        .direction(direction)
-        .add_id(true)
-        .call();
+fn get_table_definition(table: &TableMeta, direction: Direction) -> String {
+    let interface_name = create_interface_name(&table.name, &direction);
+    let fields = get_object_definition(&table.fields, &direction, true, 1);
 
     format!("export type {interface_name} = {fields}")
 }
 
-#[builder]
 fn get_object_definition(
-    fields: &Vec<DefineFieldStatement>,
-    direction: Direction,
-    #[builder(default = false)] add_id: bool,
-    #[builder(default)] prefix: String,
-    #[builder(default = 1)] depth: usize,
+    fields: &Vec<FieldMeta>,
+    direction: &Direction,
+    add_id: bool,
+    depth: usize,
 ) -> String {
     let mut rows = vec!["{".to_string()];
 
@@ -69,18 +56,13 @@ fn get_object_definition(
         rows.push(format!("{}{id}", indent(depth)));
     }
 
-    let mut fields = fields.into_iter();
-    while let Some(DefineFieldStatement { name, kind, .. }) = &fields.next() {
-        let path = name.to_string();
-        let name = path[prefix.len()..].to_string();
-
-        let optional = match kind {
-            Some(Kind::Option(_)) => "?",
+    for FieldMeta { name, r#type, .. } in fields {
+        let optional = match r#type {
+            FieldType::Option { .. } => "?",
             _ => "",
         };
 
-        let ts_type = get_ts_type(path, kind.clone(), direction, &mut fields, depth);
-
+        let ts_type = get_ts_type(r#type, direction, depth);
         rows.push(format!("{}{name}{optional}: {ts_type},", indent(depth)));
     }
 
@@ -89,123 +71,65 @@ fn get_object_definition(
     rows.join("\n")
 }
 
-fn get_ts_type<'a>(
-    path: String,
-    kind: Option<Kind>,
-    direction: Direction,
-    fields: &mut (impl Iterator<Item = &'a DefineFieldStatement> + std::clone::Clone),
-    depth: usize,
-) -> String {
-    match kind {
-        None => "any".to_string(),
-        Some(kind) => match kind {
-            Kind::Any => "any".to_string(),
-            Kind::Null => "null".to_string(),
-            Kind::Bool => "boolean".to_string(),
-            Kind::Decimal | Kind::Float | Kind::Int | Kind::Number => "number".to_string(),
-            Kind::String | Kind::Uuid | Kind::Duration => "string".to_string(),
-            Kind::Datetime => match direction {
-                Direction::In => "Date | string".to_string(),
-                Direction::Out => "string".to_string(),
-            },
-            Kind::Option(kind) => get_ts_type(path, Some(*kind), direction, fields, depth),
-            Kind::Object => {
-                let prefix = format!("{path}.");
+fn get_ts_type<'a>(r#type: &FieldType, direction: &Direction, depth: usize) -> String {
+    match r#type {
+        FieldType::Any => "any".to_string(),
+        FieldType::Null => "null".to_string(),
+        FieldType::Boolean => "boolean".to_string(),
+        FieldType::Number => "number".to_string(),
+        FieldType::String => "string".to_string(),
+        FieldType::Date => match direction {
+            Direction::In => "Date | string".to_string(),
+            Direction::Out => "string".to_string(),
+        },
+        FieldType::Option { inner } => {
+            let inner = get_ts_type(inner, direction, depth);
+            format!("{inner} | undefined")
+        }
+        FieldType::Object { fields } => match fields {
+            Some(fields) => get_object_definition(&fields, direction, false, depth + 1),
+            None => "object".to_string(),
+        },
+        FieldType::Record { table } => {
+            let record_interface = create_interface_name(&table, direction);
 
-                let subfields: Vec<_> = fields
-                    .take_while_ref(|f| f.name.to_string().starts_with(&prefix))
-                    .cloned()
-                    .collect();
-
-                if subfields.len() == 0 {
-                    "object".to_string()
-                } else {
-                    get_object_definition()
-                        .fields(&subfields)
-                        .direction(direction)
-                        .prefix(prefix)
-                        .depth(depth + 1)
-                        .call()
-                }
+            match direction {
+                Direction::In => format!("Required<{record_interface}>['id']"),
+                Direction::Out => format!("{record_interface} | {record_interface}['id']"),
             }
-            Kind::Record(vec) => {
-                let record_interface = create_interface_name(&vec[0], direction);
+        }
+        FieldType::Union { variants } => {
+            let ts_types: Vec<_> = variants
+                .into_iter()
+                .map(|variant| get_ts_type(variant, direction, depth))
+                .collect();
 
-                match direction {
-                    Direction::In => format!("Required<{record_interface}>['id']"),
-                    Direction::Out => format!("{record_interface} | {record_interface}['id']"),
-                }
-            }
-            Kind::Either(kinds) => {
-                let ts_types: Vec<_> = kinds
+            ts_types.join(" | ")
+        }
+        FieldType::Array { item } => {
+            let item_ts_type = get_ts_type(item, direction, depth);
+
+            format!("Array<{item_ts_type}>")
+        }
+        FieldType::Literal(value) => match value {
+            Literal::String { value: string } => format!("'{string}'"),
+            Literal::Number { value: number } => number.to_string(),
+            Literal::Array { inner: items } => {
+                let ts_types: Vec<_> = items
                     .into_iter()
-                    .map(|kind| get_ts_type(path.clone(), Some(kind), direction, fields, depth))
+                    .map(|kind| get_ts_type(kind, direction, depth))
                     .collect();
 
-                ts_types.join(" | ")
+                format!("[{}]", ts_types.join(", "))
             }
-            Kind::Set(_, _) | Kind::Array(_, _) => {
-                let item_ts_type = match fields.next() {
-                    Some(item_definition) => {
-                        get_ts_type(
-                            item_definition.name.to_string(),
-                            item_definition.kind.clone(),
-                            direction,
-                            fields,
-                            depth,
-                        )
-                    },
-                    None => "any".to_string()
-                };
-
-                format!("Array<{item_ts_type}>")
-            }
-            Kind::Literal(literal) => match literal {
-                Literal::String(string) => string.to_string(),
-                Literal::Number(number) => number.to_string(),
-                Literal::Array(kinds) => {
-                    let ts_types: Vec<_> = kinds
-                    .into_iter()
-                    .map(|kind| get_ts_type(path.clone(), Some(kind), direction, fields, depth))
-                    .collect();
-
-                    format!("[{}]", ts_types.join(", "))
-                },
-                Literal::Object(map) => {
-                    let mut rows = vec!["{".to_string()];
-
-                    for (name, kind) in map {
-                        let optional = match kind {
-                            Kind::Option(_) => "?",
-                            _ => "",
-                        };
-
-                        let ts_type = get_ts_type(name.clone(), Some(kind), direction, &mut iter::empty(), depth);
-
-                        rows.push(format!("{}{name}{optional}: {ts_type},", indent(depth)));
-                    }
-
-                    rows.push(format!("{}}}", indent(depth - 1)));
-
-                    rows.join("\n")
-                },
-                _ => unimplemented!(
-                    "The type of field '{path}' is not yet supported. Please open an issue on github."
-                ),
-            },
-            _ => unimplemented!(
-                "The type of field '{path}' is not yet supported. Please open an issue on github."
-            ),
         },
     }
 }
 
-fn create_interface_name(name: &str, direction: Direction) -> String {
-    let pascal_case_name = name.to_case(Case::Pascal);
-
+fn create_interface_name(name: &str, direction: &Direction) -> String {
     match direction {
-        Direction::In => format!("In{pascal_case_name}"),
-        Direction::Out => format!("Out{pascal_case_name}"),
+        Direction::In => format!("In{name}"),
+        Direction::Out => format!("Out{name}"),
     }
 }
 

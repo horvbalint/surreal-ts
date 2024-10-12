@@ -27,7 +27,7 @@ DEFINE FIELD literal_object ON schemafull_test TYPE {
   literal: 'literal',
   union: 'literal' | 6,
   object: object,
-  array: array,
+  array: array<number>,
   literal_object: {
     number: number,
   } 
@@ -36,6 +36,7 @@ DEFINE FIELD record ON schemafull_test TYPE record<ref_test>;
 DEFINE FIELD array ON schemafull_test TYPE array;
 DEFINE FIELD array_array1 ON schemafull_test TYPE array<array>;
 DEFINE FIELD record_array ON schemafull_test TYPE array<record<ref_test>>;
+DEFINE FIELD optional_item_array ON schemafull_test TYPE array<option<string>>;
 DEFINE FIELD either_simple ON schemafull_test TYPE string | bool;
 DEFINE FIELD either_complex ON schemafull_test TYPE record<ref_test> | array<record<ref_test>>;
 DEFINE FIELD either_array ON schemafull_test TYPE array<string | bool>;

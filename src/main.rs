@@ -16,17 +16,19 @@
 
 use core::panic;
 use std::collections::BTreeMap;
+use std::iter;
 
 use clap::Parser;
-use serde::Deserialize;
+use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use surrealdb::sql::statements::{DefineFieldStatement, DefineTableStatement};
+use surrealdb::sql::{self, Kind};
 use surrealdb::sql::{statements::DefineStatement, Query, Statement};
 use surrealdb::{engine::any::Any, opt::auth::Root, Surreal};
 
 use surrealdb::syn::parser::Parser as SurrealParser;
 
-// mod meta;
-// mod parser;
+mod meta;
 mod ts;
 
 /// A simple typescript definition generator for SurrealDB
@@ -83,12 +85,23 @@ async fn main() -> anyhow::Result<()> {
     db.use_ns(&args.namespace).use_db(&args.database).await?;
 
     let tables = get_tables_for_db(&mut db).await?;
+
+    let table_metas: Vec<_> = tables
+        .into_iter()
+        .map(|table| TableMeta {
+            name: table.table.name.to_string(),
+            fields: get_field_metas(&table.fields, "".to_string()),
+            comment: table.table.comment.map(|c| c.to_string()),
+        })
+        .collect();
+
     if !args.skip_ts_generation {
-        ts::write_tables(&args.output, &tables, args.store_in_db)?;
+        ts::write_tables(&args.output, &table_metas, args.store_in_db)?;
     }
-    // if args.store_in_db {
-    //     meta::store_tables(&mut db, &args.metadata_table_name, &mut tables).await?;
-    // }
+
+    if args.store_in_db {
+        meta::store_tables(&mut db, &args.metadata_table_name, table_metas).await?;
+    }
 
     println!("\nAll operations done ✅");
 
@@ -164,4 +177,175 @@ fn parse_sql(sql: &str) -> Query {
     let result = stack.enter(|ctx| parser.parse_query(ctx)).finish().unwrap();
 
     result
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TableMeta {
+    name: String,
+    fields: Vec<FieldMeta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    comment: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct FieldMeta {
+    name: String,
+    r#type: FieldType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    comment: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+#[serde(tag = "name")]
+enum FieldType {
+    Any,
+    Null,
+    Boolean,
+    String,
+    Number,
+    Date,
+    Option { inner: Box<FieldType> },
+    Record { table: String },
+    Array { item: Box<FieldType> },
+    Object { fields: Option<Vec<FieldMeta>> },
+    Union { variants: Vec<FieldType> },
+    Literal(Literal),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+#[serde(tag = "type")]
+enum Literal {
+    String { value: String },
+    Number { value: f64 },
+    Array { inner: Vec<FieldType> },
+}
+
+impl Into<FieldType> for Literal {
+    fn into(self) -> FieldType {
+        FieldType::Literal(self)
+    }
+}
+
+fn get_field_metas(fields: &Vec<DefineFieldStatement>, prefix: String) -> Vec<FieldMeta> {
+    let mut field_metas = vec![];
+
+    let mut fields = fields.into_iter();
+    while let Some(DefineFieldStatement {
+        name,
+        kind,
+        comment,
+        ..
+    }) = &fields.next()
+    {
+        let path = name.to_string();
+        let name = path[prefix.len()..].to_string();
+
+        let field_type = get_field_type(path, kind.clone(), &mut fields);
+
+        field_metas.push(FieldMeta {
+            name,
+            r#type: field_type,
+            comment: comment.clone().map(|c| c.to_string()),
+        });
+    }
+
+    field_metas
+}
+
+fn get_field_type<'a>(
+    path: String,
+    kind: Option<Kind>,
+    fields: &mut (impl Iterator<Item = &'a DefineFieldStatement> + std::clone::Clone),
+) -> FieldType {
+    match kind {
+        None => FieldType::Any,
+        Some(kind) => match kind {
+            Kind::Any => FieldType::Any,
+            Kind::Null => FieldType::Null,
+            Kind::Bool => FieldType::Boolean,
+            Kind::Decimal | Kind::Float | Kind::Int | Kind::Number => FieldType::Number,
+            Kind::String | Kind::Uuid | Kind::Duration => FieldType::String,
+            Kind::Datetime => FieldType::Date,
+            Kind::Option(kind) => {
+                let inner = get_field_type(path, Some(*kind), fields);
+                FieldType::Option { inner: inner.into() }
+            },
+            Kind::Object => {
+                let prefix = format!("{path}.");
+
+                let subfields: Vec<_> = fields
+                    .take_while_ref(|f| f.name.to_string().starts_with(&prefix))
+                    .cloned()
+                    .collect();
+
+                if subfields.len() == 0 {
+                    FieldType::Object{ fields: None }
+                } else {
+                    let subfields = get_field_metas(&subfields, prefix);
+                    FieldType::Object{ fields: Some(subfields) }
+                }
+            }
+            Kind::Record(vec) => {
+                let record_interface = vec[0].to_string();
+                FieldType::Record{ table: record_interface }
+            }
+            Kind::Either(kinds) => {
+                let variants: Vec<_> = kinds
+                    .into_iter()
+                    .map(|kind| get_field_type(path.clone(), Some(kind), fields))
+                    .collect();
+
+                FieldType::Union{ variants }
+            }
+            Kind::Set(inner, _) | Kind::Array(inner, _) => {
+                let item = match fields.next() {
+                    Some(item_definition) => {
+                        get_field_type(
+                            item_definition.name.to_string(),
+                            item_definition.kind.clone(),
+                            fields,
+                        )
+                    },
+                    None => get_field_type(path, Some(*inner), fields)
+                };
+
+                FieldType::Array{ item: item.into() }
+            }
+            Kind::Literal(literal) => match literal {
+                sql::Literal::String(value) => Literal::String{value: value[..].to_string()}.into(),
+                sql::Literal::Number(number) => Literal::Number{value: number.as_float()}.into(),
+                sql::Literal::Array(kinds) => {
+                    let types: Vec<_> = kinds
+                    .into_iter()
+                    .map(|kind| get_field_type(path.clone(), Some(kind), fields))
+                    .collect();
+
+                    Literal::Array{ inner: types }.into()
+                },
+                sql::Literal::Object(map) => {
+                    let fields = map.into_iter().map(|(name, kind)| {
+                        let field_type = get_field_type(format!("{path}.{name}"), Some(kind), &mut iter::empty());
+                        FieldMeta {
+                            name,
+                            r#type: field_type,
+                            comment: None,
+                        }
+                    })
+                    .collect();
+
+                    FieldType::Object{ fields: Some(fields) }
+                },
+                _ => unimplemented!(
+                    "The type of field '{path}' is not yet supported. Please open an issue on github."
+                ),
+            },
+            _ => unimplemented!(
+                "The type of field '{path}' is not yet supported. Please open an issue on github."
+            ),
+        },
+    }
 }
