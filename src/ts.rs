@@ -98,7 +98,7 @@ fn get_ts_type<'a>(r#type: &FieldType, direction: &Direction, depth: usize) -> S
                 Direction::Out => format!("{record_interface} | {record_interface}['id']"),
             }
         }
-        FieldType::Union { variants } => {
+        FieldType::Union { variants, .. } => {
             let ts_types: Vec<_> = variants
                 .into_iter()
                 .map(|variant| get_ts_type(variant, direction, depth))
@@ -114,7 +114,7 @@ fn get_ts_type<'a>(r#type: &FieldType, direction: &Direction, depth: usize) -> S
         FieldType::Literal(value) => match value {
             Literal::String { value: string } => format!("'{string}'"),
             Literal::Number { value: number } => number.to_string(),
-            Literal::Array { inner: items } => {
+            Literal::Array { items } => {
                 let ts_types: Vec<_> = items
                     .into_iter()
                     .map(|kind| get_ts_type(kind, direction, depth))

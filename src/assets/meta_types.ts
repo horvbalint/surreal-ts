@@ -1,4 +1,5 @@
 export type TableMeta = {
+  id: string;
   name: string;
   fields: FieldMeta[];
   comment?: string;
@@ -35,17 +36,27 @@ export type FieldType =
       variants: FieldType[];
     }
   | {
+      name: "union";
+      variants: FieldType[];
+      kind: "string";
+    }
+  | {
+      name: "union";
+      variants: FieldType[];
+      kind: "number";
+    }
+  | {
       name: "literal";
-      type: "number";
+      kind: "number";
       value: number;
     }
   | {
       name: "literal";
-      type: "string";
+      kind: "string";
       value: string;
     }
   | {
       name: "literal";
-      type: "array";
-      inner: FieldType[];
+      kind: "array";
+      items: FieldType[];
     };

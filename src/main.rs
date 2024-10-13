@@ -205,21 +205,40 @@ enum FieldType {
     String,
     Number,
     Date,
-    Option { inner: Box<FieldType> },
-    Record { table: String },
-    Array { item: Box<FieldType> },
-    Object { fields: Option<Vec<FieldMeta>> },
-    Union { variants: Vec<FieldType> },
+    Option {
+        inner: Box<FieldType>,
+    },
+    Record {
+        table: String,
+    },
+    Array {
+        item: Box<FieldType>,
+    },
+    Object {
+        fields: Option<Vec<FieldMeta>>,
+    },
+    Union {
+        variants: Vec<FieldType>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        kind: Option<EnumUnionKind>,
+    },
     Literal(Literal),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-#[serde(tag = "type")]
+enum EnumUnionKind {
+    String,
+    Number,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+#[serde(tag = "kind")]
 enum Literal {
     String { value: String },
     Number { value: f64 },
-    Array { inner: Vec<FieldType> },
+    Array { items: Vec<FieldType> },
 }
 
 impl Into<FieldType> for Literal {
@@ -295,7 +314,7 @@ fn get_field_type<'a>(
                     .map(|kind| get_field_type(path.clone(), Some(kind), fields))
                     .collect();
 
-                FieldType::Union{ variants }
+                FieldType::Union{ variants: variants.clone(), kind: get_union_enum_kind(variants) }
             }
             Kind::Set(inner, _) | Kind::Array(inner, _) => {
                 let item = match fields.next() {
@@ -315,12 +334,12 @@ fn get_field_type<'a>(
                 sql::Literal::String(value) => Literal::String{value: value[..].to_string()}.into(),
                 sql::Literal::Number(number) => Literal::Number{value: number.as_float()}.into(),
                 sql::Literal::Array(kinds) => {
-                    let types: Vec<_> = kinds
+                    let items: Vec<_> = kinds
                         .into_iter()
                         .map(|kind| get_field_type(path.clone(), Some(kind), fields))
                         .collect();
 
-                    Literal::Array{ inner: types }.into()
+                    Literal::Array{ items }.into()
                 },
                 sql::Literal::Object(map) => {
                     let fields = map.into_iter().map(|(name, kind)| {
@@ -344,4 +363,26 @@ fn get_field_type<'a>(
             ),
         },
     }
+}
+
+fn get_union_enum_kind(variants: Vec<FieldType>) -> Option<EnumUnionKind> {
+    if variants.is_empty() {
+        return None;
+    }
+
+    if variants
+        .iter()
+        .all(|v| matches!(v, FieldType::Literal(Literal::String { .. })))
+    {
+        return Some(EnumUnionKind::String);
+    }
+
+    if variants
+        .iter()
+        .all(|v| matches!(v, FieldType::Literal(Literal::Number { .. })))
+    {
+        return Some(EnumUnionKind::Number);
+    }
+
+    None
 }
