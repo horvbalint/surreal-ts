@@ -3,7 +3,7 @@ use std::io::Write;
 
 use convert_case::{Case, Casing};
 
-use crate::{FieldMeta, FieldType, Literal, TableMeta};
+use crate::{Enum, FieldMeta, FieldType, Literal, TableMeta, Union};
 
 #[derive(Debug)]
 enum Direction {
@@ -100,14 +100,28 @@ fn get_ts_type<'a>(r#type: &FieldType, direction: &Direction, depth: usize) -> S
                 Direction::Out => format!("{record_interface} | {record_interface}['id']"),
             }
         }
-        FieldType::Union { variants, .. } => {
-            let ts_types: Vec<_> = variants
-                .into_iter()
-                .map(|variant| get_ts_type(variant, direction, depth))
-                .collect();
+        FieldType::Union(union) => match union {
+            Union::Normal { variants } => {
+                let ts_types: Vec<_> = variants
+                    .into_iter()
+                    .map(|variant| get_ts_type(variant, direction, depth))
+                    .collect();
 
-            ts_types.join(" | ")
-        }
+                ts_types.join(" | ")
+            }
+            Union::Enum(r#enum) => match r#enum {
+                Enum::String { variants } => variants
+                    .into_iter()
+                    .map(|v| format!("'{v}'"))
+                    .collect::<Vec<_>>()
+                    .join(" | "),
+                Enum::Number { variants } => variants
+                    .into_iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" | "),
+            },
+        },
         FieldType::Array { item } => {
             let item_ts_type = get_ts_type(item, direction, depth);
 

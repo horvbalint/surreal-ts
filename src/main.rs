@@ -205,31 +205,28 @@ enum FieldType {
     String,
     Number,
     Date,
-    Option {
-        inner: Box<FieldType>,
-    },
-    Record {
-        table: String,
-    },
-    Array {
-        item: Box<FieldType>,
-    },
-    Object {
-        fields: Option<Vec<FieldMeta>>,
-    },
-    Union {
-        variants: Vec<FieldType>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        kind: Option<EnumUnionKind>,
-    },
+    Option { inner: Box<FieldType> },
+    Record { table: String },
+    Array { item: Box<FieldType> },
+    Object { fields: Option<Vec<FieldMeta>> },
+    Union(Union),
     Literal(Literal),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-enum EnumUnionKind {
-    String,
-    Number,
+#[serde(untagged)]
+enum Union {
+    Normal { variants: Vec<FieldType> },
+    Enum(Enum),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+#[serde(tag = "enum")]
+enum Enum {
+    String { variants: Vec<String> },
+    Number { variants: Vec<f64> },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -314,7 +311,7 @@ fn get_field_type<'a>(
                     .map(|kind| get_field_type(path.clone(), Some(kind), fields))
                     .collect();
 
-                FieldType::Union{ variants: variants.clone(), kind: get_union_enum_kind(variants) }
+                FieldType::Union(get_union_variant(variants))
             }
             Kind::Set(inner, _) | Kind::Array(inner, _) => {
                 let item = match fields.next() {
@@ -365,24 +362,30 @@ fn get_field_type<'a>(
     }
 }
 
-fn get_union_enum_kind(variants: Vec<FieldType>) -> Option<EnumUnionKind> {
-    if variants.is_empty() {
-        return None;
-    }
-
-    if variants
+fn get_union_variant(variants: Vec<FieldType>) -> Union {
+    let strings: Vec<_> = variants
         .iter()
-        .all(|v| matches!(v, FieldType::Literal(Literal::String { .. })))
-    {
-        return Some(EnumUnionKind::String);
+        .filter_map(|v| match v {
+            FieldType::Literal(Literal::String { value }) => Some(value.clone()),
+            _ => None,
+        })
+        .collect();
+
+    if strings.len() == variants.len() {
+        return Union::Enum(Enum::String { variants: strings });
     }
 
-    if variants
+    let numbers: Vec<_> = variants
         .iter()
-        .all(|v| matches!(v, FieldType::Literal(Literal::Number { .. })))
-    {
-        return Some(EnumUnionKind::Number);
+        .filter_map(|v| match v {
+            FieldType::Literal(Literal::Number { value }) => Some(value.clone()),
+            _ => None,
+        })
+        .collect();
+
+    if numbers.len() == variants.len() {
+        return Union::Enum(Enum::Number { variants: numbers });
     }
 
-    None
+    Union::Normal { variants }
 }
