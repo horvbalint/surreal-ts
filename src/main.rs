@@ -85,7 +85,6 @@ async fn main() -> anyhow::Result<()> {
     db.use_ns(&args.namespace).use_db(&args.database).await?;
 
     let tables = get_tables_for_db(&mut db).await?;
-
     let table_metas: Vec<_> = tables
         .into_iter()
         .map(|table| TableMeta {
@@ -172,7 +171,6 @@ async fn get_fields_for_table(
 
 fn parse_sql(sql: &str) -> Query {
     let mut parser = SurrealParser::new(sql.as_bytes());
-
     let mut stack = reblessive::Stack::new();
     let result = stack.enter(|ctx| parser.parse_query(ctx)).finish().unwrap();
 
@@ -244,11 +242,9 @@ fn get_field_metas(fields: &Vec<DefineFieldStatement>, prefix: String) -> Vec<Fi
         let path = name.to_string();
         let name = path[prefix.len()..].to_string();
 
-        let field_type = get_field_type(path, kind.clone(), &mut fields);
-
         field_metas.push(FieldMeta {
             name,
-            r#type: field_type,
+            r#type: get_field_type(path, kind.clone(), &mut fields),
             comment: comment.clone().map(|c| c.to_string()),
         });
     }
@@ -320,9 +316,9 @@ fn get_field_type<'a>(
                 sql::Literal::Number(number) => Literal::Number{value: number.as_float()}.into(),
                 sql::Literal::Array(kinds) => {
                     let types: Vec<_> = kinds
-                    .into_iter()
-                    .map(|kind| get_field_type(path.clone(), Some(kind), fields))
-                    .collect();
+                        .into_iter()
+                        .map(|kind| get_field_type(path.clone(), Some(kind), fields))
+                        .collect();
 
                     Literal::Array{ inner: types }.into()
                 },
