@@ -1,6 +1,8 @@
 use std::fs::File;
 use std::io::Write;
 
+use convert_case::{Case, Casing};
+
 use crate::{FieldMeta, FieldType, Literal, TableMeta};
 
 #[derive(Debug)]
@@ -127,9 +129,11 @@ fn get_ts_type<'a>(r#type: &FieldType, direction: &Direction, depth: usize) -> S
 }
 
 fn create_interface_name(name: &str, direction: &Direction) -> String {
+    let pascal_case_name = name.to_case(Case::Pascal);
+
     match direction {
-        Direction::In => format!("In{name}"),
-        Direction::Out => format!("Out{name}"),
+        Direction::In => format!("In{pascal_case_name}"),
+        Direction::Out => format!("Out{pascal_case_name}"),
     }
 }
 
