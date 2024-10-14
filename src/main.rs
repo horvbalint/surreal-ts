@@ -16,9 +16,12 @@
 
 use core::panic;
 use std::collections::BTreeMap;
+use std::fs::File;
+use std::io::BufReader;
 use std::iter;
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
+use config::Config;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use surrealdb::sql::statements::{DefineFieldStatement, DefineTableStatement};
@@ -28,61 +31,32 @@ use surrealdb::{engine::any::Any, opt::auth::Root, Surreal};
 
 use surrealdb::syn::parser::Parser as SurrealParser;
 
+mod config;
 mod meta;
 mod ts;
 
-/// A simple typescript definition generator for SurrealDB
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct CliArgs {
-    /// The connection url to the SurrealDB instance
-    #[arg(short, long, default_value = "http://localhost:8000")]
-    connection_url: String,
-
-    /// The root username for the SurrealDB instance
-    #[arg(short, long, default_value = "root")]
-    username: String,
-
-    /// The root password for the SurrealDB instance
-    #[arg(short, long, default_value = "root")]
-    password: String,
-
-    /// The namespace to use
-    #[arg(short, long)]
-    namespace: String,
-
-    /// The database to use
-    #[arg(short, long)]
-    database: String,
-
-    /// Store generated table and field metadata into the database
-    #[arg(short, long)]
-    store_in_db: bool,
-
-    /// Name of the table to use when the 'store-in-db' flag is enabled
-    #[arg(short, long, default_value = "table_meta")]
-    metadata_table_name: String,
-
-    /// Skip the generation of a typescript definition file
-    #[arg(long)]
-    skip_ts_generation: bool,
-
-    /// The path where the typescript defintion file will be generated
-    #[arg(short, long, default_value = "db.d.ts")]
-    output: String,
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let args = CliArgs::parse();
+    let mut config = Config::parse();
+    if let Some(path) = config.config_file_path {
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+        config = serde_json::from_reader(reader)?
+    };
 
-    let mut db = surrealdb::engine::any::connect(&args.connection_url).await?;
+    let (Some(namespace), Some(database)) = (config.namespace, config.database) else {
+        println!("No 'namespace' or 'database' provided in the config, see the help output for correct usage:\n");
+        Config::command().print_help().ok();
+        return Ok(());
+    };
+
+    let mut db = surrealdb::engine::any::connect(&config.address).await?;
     db.signin(Root {
-        username: &args.username,
-        password: &args.password,
+        username: &config.username,
+        password: &config.password,
     })
     .await?;
-    db.use_ns(&args.namespace).use_db(&args.database).await?;
+    db.use_ns(namespace).use_db(database).await?;
 
     let tables = get_tables_for_db(&mut db).await?;
     let table_metas: Vec<_> = tables
@@ -94,12 +68,12 @@ async fn main() -> anyhow::Result<()> {
         })
         .collect();
 
-    if !args.skip_ts_generation {
-        ts::write_tables(&args.output, &table_metas, args.store_in_db)?;
+    if !config.skip_ts_generation {
+        ts::write_tables(&config.output, &table_metas, config.store_in_db)?;
     }
 
-    if args.store_in_db {
-        meta::store_tables(&mut db, &args.metadata_table_name, table_metas).await?;
+    if config.store_in_db {
+        meta::store_tables(&mut db, &config.metadata_table_name, table_metas).await?;
     }
 
     println!("\nAll operations done ✅");

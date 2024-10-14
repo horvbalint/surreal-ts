@@ -3123,6 +3123,7 @@ dependencies = [
  "itertools 0.13.0",
  "reblessive",
  "serde",
+ "serde_json",
  "surrealdb",
  "tokio",
 ]

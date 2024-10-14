@@ -12,6 +12,7 @@ convert_case = "0.6.0"
 itertools = "0.13.0"
 reblessive = "0.4.1"
 serde = "1.0.210"
+serde_json = "1.0.128"
 surrealdb = { version = "2.0.4", features = ["protocol-http"] }
 tokio = "1.40.0"
 
