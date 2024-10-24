@@ -3,168 +3,164 @@ use std::io::Write;
 
 use convert_case::{Case, Casing};
 
-use crate::{FieldTree, FieldType, Fields, Leaf, Tables};
+use crate::{config::Config, Enum, FieldMeta, FieldType, Literal, TableMeta, Union};
 
-pub fn write_tables(
-    output_path: &str,
-    tables: &mut Tables,
-    add_table_meta_types: bool,
-) -> anyhow::Result<()> {
-    println!("Writing type declaration file...");
-    let mut file = File::create(output_path)?;
-
-    if add_table_meta_types {
-        write!(
-            &mut file,
-            "export type TableMeta = {{
-  name: string
-  fields: FieldMeta[]
-  comment?: string
-}}
-
-export type FieldMeta = {{
-  name: string
-  isOptional: boolean
-  isArray: boolean
-  type: string
-  comment?: string
-  isRecord?: true
-  fields?: FieldMeta[]
-}}\n\n"
-        )?;
-    }
-
-    for (name, table) in tables.iter_mut() {
-        let node = table.r#type.as_node_mut();
-
-        write_table(&mut file, name, &mut node.fields, false)?;
-        write_table(&mut file, name, &mut node.fields, true)?;
-    }
-
-    Ok(())
+#[derive(Debug)]
+enum Direction {
+    In,
+    Out,
 }
 
-fn write_table(
-    file: &mut File,
-    name: &str,
-    fields: &mut Fields,
-    from_db: bool,
-) -> anyhow::Result<()> {
-    let interface_name = create_interface_name(name, from_db);
-    write!(file, "export type {interface_name} = ")?;
-
-    let field = FieldTree {
-        is_optional: !from_db,
-        is_array: false,
-        comment: None,
-        r#type: FieldType::Leaf(Leaf {
-            name: "string".to_string(),
-            is_record: false,
-        }),
-    };
-    fields.insert("id".to_string(), field);
-
-    write_object(file, fields, from_db, 0)?;
-
-    write!(file, "\n\n")?;
-    Ok(())
+pub struct TSGenerator<'a> {
+    config: &'a Config,
 }
 
-fn write_object(
-    file: &mut File,
-    fields: &Fields,
-    from_db: bool,
-    depth: usize,
-) -> anyhow::Result<()> {
-    if fields.is_empty() {
-        write!(file, "object")?;
-    } else {
-        writeln!(file, "{{")?;
+impl<'a> TSGenerator<'a> {
+    pub fn new(config: &'a Config) -> Self {
+        Self { config }
+    }
 
-        let indentation = "\t".repeat(depth);
-        for key in fields.keys() {
-            write!(file, "{indentation}\t{key}")?;
-            write_field(file, &fields[key], from_db, depth)?;
+    pub fn write_tables(&self, tables: &Vec<TableMeta>) -> anyhow::Result<()> {
+        println!("\nWriting type declaration file...");
+
+        let mut file = File::create(&self.config.output)?;
+
+        if self.config.store_in_db {
+            write!(&mut file, "{}\n", include_str!("assets/meta_types.ts"))?;
         }
 
-        write!(file, "{indentation}}}")?;
-    }
+        for table in tables {
+            let in_definition = self.get_table_definition(&table, Direction::In);
+            let out_definition = self.get_table_definition(&table, Direction::Out);
 
-    Ok(())
-}
-
-fn write_field(
-    file: &mut File,
-    field: &FieldTree,
-    from_db: bool,
-    depth: usize,
-) -> anyhow::Result<()> {
-    if field.is_optional {
-        write!(file, "?")?;
-    }
-
-    write!(file, ": ")?;
-
-    if field.is_array {
-        write!(file, "Array<")?;
-    }
-
-    match &field.r#type {
-        FieldType::Node(node) => write_object(file, &node.fields, from_db, depth + 1)?,
-        FieldType::Leaf(leaf) => write_primitive(file, &leaf.name, leaf.is_record, from_db)?,
-    }
-
-    if field.is_array {
-        write!(file, ">")?;
-    }
-
-    writeln!(file)?;
-    Ok(())
-}
-
-fn write_primitive(
-    file: &mut File,
-    name: &String,
-    is_record: bool,
-    from_db: bool,
-) -> anyhow::Result<()> {
-    let name = if is_record {
-        let ref_name = create_interface_name(name, from_db);
-
-        if from_db {
-            format!("{ref_name}['id'] | {ref_name}")
-        } else {
-            format!("Required<{ref_name}>['id']")
+            write!(file, "{in_definition}\n\n{out_definition}\n\n")?;
         }
-    } else if name == "datetime" {
-        if from_db {
-            "string".to_string()
-        } else {
-            "Date | string".to_string()
-        }
-    } else if name == "bool" {
-        "boolean".to_string()
-    } else if name == "decimal" || name == "float" || name == "int" {
-        "number".to_string()
-    } else if name == "duration" || name == "geometry" {
-        "string".to_string()
-    } else if name == "array" || name == "set" {
-        // we get here when array or set is used without a generic type parameter
-        "[]".to_string()
-    } else {
-        name.to_string()
-    };
 
-    write!(file, "{name}")?;
-    Ok(())
+        Ok(())
+    }
+
+    fn get_table_definition(&self, table: &TableMeta, direction: Direction) -> String {
+        let interface_name = create_interface_name(&table.name, &direction);
+        let fields = self.get_object_definition(&table.fields, &direction, true, 1);
+
+        format!("export type {interface_name} = {fields}")
+    }
+
+    fn get_object_definition(
+        &self,
+        fields: &Vec<FieldMeta>,
+        direction: &Direction,
+        add_id: bool,
+        depth: usize,
+    ) -> String {
+        let mut rows = vec!["{".to_string()];
+
+        if add_id {
+            let id = match direction {
+                Direction::In => "id?: string,".to_string(),
+                Direction::Out => "id: string,".to_string(),
+            };
+
+            rows.push(format!("{}{id}", indent(depth)));
+        }
+
+        for FieldMeta { name, r#type, .. } in fields {
+            let optional = match r#type {
+                FieldType::Option { .. } => "?",
+                _ => "",
+            };
+
+            let ts_type = self.get_ts_type(r#type, direction, depth);
+            rows.push(format!("{}{name}{optional}: {ts_type},", indent(depth)));
+        }
+
+        rows.push(format!("{}}}", indent(depth - 1)));
+
+        rows.join("\n")
+    }
+
+    fn get_ts_type(&self, r#type: &FieldType, direction: &Direction, depth: usize) -> String {
+        match r#type {
+            FieldType::Any => "any".to_string(),
+            FieldType::Null => "null".to_string(),
+            FieldType::Boolean => "boolean".to_string(),
+            FieldType::Number => "number".to_string(),
+            FieldType::String => "string".to_string(),
+            FieldType::Date => match direction {
+                Direction::In => "Date | string".to_string(),
+                Direction::Out => "string".to_string(),
+            },
+            FieldType::Option { inner } => {
+                let inner = self.get_ts_type(inner, direction, depth);
+                format!("{inner} | undefined")
+            }
+            FieldType::Object { fields } => match fields {
+                Some(fields) => self.get_object_definition(&fields, direction, false, depth + 1),
+                None => "object".to_string(),
+            },
+            FieldType::Record { table } => {
+                let record_interface = create_interface_name(&table, direction);
+
+                match direction {
+                    Direction::In => format!("Required<{record_interface}>['id']"),
+                    Direction::Out => match self.config.links_fetched {
+                        true => record_interface,
+                        false => format!("{record_interface} | {record_interface}['id']"),
+                    },
+                }
+            }
+            FieldType::Union(union) => match union {
+                Union::Normal { variants } => {
+                    let ts_types: Vec<_> = variants
+                        .into_iter()
+                        .map(|variant| self.get_ts_type(variant, direction, depth))
+                        .collect();
+
+                    ts_types.join(" | ")
+                }
+                Union::Enum(r#enum) => match r#enum {
+                    Enum::String { variants } => variants
+                        .into_iter()
+                        .map(|v| format!("'{v}'"))
+                        .collect::<Vec<_>>()
+                        .join(" | "),
+                    Enum::Number { variants } => variants
+                        .into_iter()
+                        .map(|v| v.to_string())
+                        .collect::<Vec<_>>()
+                        .join(" | "),
+                },
+            },
+            FieldType::Array { item } => {
+                let item_ts_type = self.get_ts_type(item, direction, depth);
+
+                format!("Array<{item_ts_type}>")
+            }
+            FieldType::Literal(value) => match value {
+                Literal::String { value: string } => format!("'{string}'"),
+                Literal::Number { value: number } => number.to_string(),
+                Literal::Array { items } => {
+                    let ts_types: Vec<_> = items
+                        .into_iter()
+                        .map(|kind| self.get_ts_type(kind, direction, depth))
+                        .collect();
+
+                    format!("[{}]", ts_types.join(", "))
+                }
+            },
+        }
+    }
 }
 
-pub fn create_interface_name(name: &str, from_db: bool) -> String {
+fn create_interface_name(name: &str, direction: &Direction) -> String {
     let pascal_case_name = name.to_case(Case::Pascal);
 
-    if from_db {
-        format!("Out{pascal_case_name}")
-    } else {
-        format!("In{pascal_case_name}")
+    match direction {
+        Direction::In => format!("In{pascal_case_name}"),
+        Direction::Out => format!("Out{pascal_case_name}"),
     }
+}
+
+fn indent(depth: usize) -> String {
+    "  ".repeat(depth)
 }

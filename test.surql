@@ -18,54 +18,56 @@ DEFINE FIELD number ON schemafull_test TYPE number;
 DEFINE FIELD decimal ON schemafull_test TYPE decimal;
 DEFINE FIELD float ON schemafull_test TYPE float;
 DEFINE FIELD int ON schemafull_test TYPE int;
-DEFINE FIELD geometry ON schemafull_test TYPE geometry<point>;
+DEFINE FIELD enum_string ON schemafull_test TYPE "surreal-ts" | "surreal-db";
+DEFINE FIELD enum_number ON schemafull_test TYPE 0 | 6;
+DEFINE FIELD literal_either ON schemafull_test TYPE "surreal-ts" | 6;
+DEFINE FIELD literal_string ON schemafull_test TYPE "surreal-ts";
+DEFINE FIELD literal_number ON schemafull_test TYPE 6;
+DEFINE FIELD literal_array ON schemafull_test TYPE ["surreal-ts", 6];
+DEFINE FIELD literal_object ON schemafull_test TYPE {
+  string: string,
+  literal: 'literal',
+  union: 'literal' | 6,
+  object: object,
+  array: array<number>,
+  literal_object: {
+    number: number,
+  } 
+};
 DEFINE FIELD record ON schemafull_test TYPE record<ref_test>;
+DEFINE FIELD array ON schemafull_test TYPE array;
+DEFINE FIELD array_array1 ON schemafull_test TYPE array<array>;
+DEFINE FIELD record_array ON schemafull_test TYPE array<record<ref_test>>;
+DEFINE FIELD optional_item_array ON schemafull_test TYPE array<option<string>>;
+DEFINE FIELD either_simple ON schemafull_test TYPE string | bool;
+DEFINE FIELD either_complex ON schemafull_test TYPE record<ref_test> | array<record<ref_test>>;
+DEFINE FIELD either_array ON schemafull_test TYPE array<string | bool>;
 DEFINE FIELD optional_string ON schemafull_test TYPE option<string>;
+DEFINE FIELD only_object ON schemafull_test TYPE object;
 DEFINE FIELD object ON schemafull_test TYPE object;
 DEFINE FIELD object.string ON schemafull_test TYPE string;
 DEFINE FIELD object.optional_string ON schemafull_test TYPE option<string>;
-DEFINE FIELD flexible_object ON schemafull_test FLEXIBLE TYPE object;
-DEFINE FIELD array ON schemafull_test TYPE array;
-DEFINE FIELD array_array1 ON schemafull_test TYPE array<array>;
-DEFINE FIELD array_array2 ON schemafull_test TYPE array;
-DEFINE FIELD array_array2.* ON schemafull_test TYPE array;
--- TODO: support any depth array of arrays:
--- DEFINE FIELD array_array_array1 ON schemafull_test TYPE array<array<array>>;
--- DEFINE FIELD array_array_array2 ON schemafull_test TYPE array;
--- DEFINE FIELD array_array_array2.* ON schemafull_test TYPE array;
--- DEFINE FIELD array_array_array2.*.* ON schemafull_test TYPE array;
+DEFINE FIELD object_object ON schemafull_test TYPE object;
+DEFINE FIELD object_object.object ON schemafull_test TYPE object;
+DEFINE FIELD object_object.object.string ON schemafull_test TYPE string;
 DEFINE FIELD array_object1 ON schemafull_test TYPE array<object>;
-DEFINE FIELD array_object2 ON schemafull_test TYPE array;
-DEFINE FIELD array_object2.* ON schemafull_test TYPE object;
-DEFINE FIELD array_object3 ON schemafull_test TYPE array<object>;
-DEFINE FIELD array_object3.string ON schemafull_test TYPE string;
-DEFINE FIELD array_object4 ON schemafull_test TYPE array;
-DEFINE FIELD array_object4.* ON schemafull_test TYPE object;
-DEFINE FIELD array_object4.*.string ON schemafull_test TYPE string;
+DEFINE FIELD array_object2 ON schemafull_test TYPE array<object>;
+DEFINE FIELD array_object2.*.string ON schemafull_test TYPE string;
 DEFINE FIELD array_object_array_string ON schemafull_test TYPE array<object>;
-DEFINE FIELD array_object_array_string.array ON schemafull_test TYPE array<string>;
-DEFINE FIELD array_object_array_string2 ON schemafull_test TYPE array;
-DEFINE FIELD array_object_array_string2.* ON schemafull_test TYPE object;
-DEFINE FIELD array_object_array_string2.*.array ON schemafull_test TYPE array;
-DEFINE FIELD array_object_array_string2.*.array[*] ON schemafull_test TYPE string;
+DEFINE FIELD array_object_array_string.*.array ON schemafull_test TYPE array<string>;
 DEFINE FIELD array_string1 ON schemafull_test TYPE array<string>;
-DEFINE FIELD array_string2 ON schemafull_test TYPE array;
-DEFINE FIELD array_string2.* ON schemafull_test TYPE string;
 DEFINE FIELD array_string_max ON schemafull_test TYPE array<string, 3>;
 DEFINE FIELD optional_array_string1 ON schemafull_test TYPE option<array<string>>;
-DEFINE FIELD optional_array_string2 ON schemafull_test TYPE option<array>;
-DEFINE FIELD optional_array_string2.* ON schemafull_test TYPE string;
 DEFINE FIELD set ON schemafull_test TYPE set;
 DEFINE FIELD set_object ON schemafull_test TYPE set<object>;
-DEFINE FIELD set_object ON schemafull_test TYPE set<object>;
-DEFINE FIELD set_object.string ON schemafull_test TYPE string;
+DEFINE FIELD set_object.*.string ON schemafull_test TYPE string;
 DEFINE FIELD set_string ON schemafull_test TYPE set<string>;
 DEFINE FIELD set_string_max ON schemafull_test TYPE set<string, 3>;
 DEFINE FIELD optional_set_string ON schemafull_test TYPE option<set<string>>;
 DEFINE FIELD string_with_default ON schemafull_test TYPE string DEFAULT "default";
 DEFINE FIELD string_with_value ON schemafull_test TYPE string VALUE $value;
 DEFINE FIELD string_with_assert ON schemafull_test TYPE string ASSERT string::is::email($value);
-DEFINE FIELD string_with_assert ON schemafull_test TYPE string PERMISSIONS FULL;
+DEFINE FIELD string_with_permission ON schemafull_test TYPE string PERMISSIONS FULL;
 
 DEFINE TABLE ref_test SCHEMAFULL;
 DEFINE FIELD name ON ref_test TYPE string;
@@ -82,8 +84,7 @@ DEFINE FIELD double_qoute_comment ON with_comment TYPE string COMMENT "double qo
 DEFINE FIELD not_end_comment ON with_comment TYPE string COMMENT "not end comment" DEFAULT "comment";
 DEFINE FIELD small_cased_comment ON with_comment TYPE string comment "small cased comment";
 DEFINE FIELD no_comment ON with_comment TYPE string;
-// These cases are not yet handled
-// DEFINE FIELD comment_using_single_qoute ON with_comment TYPE string comment "comment using the ' character";
-// DEFINE FIELD comment_using_double_qoute ON with_comment TYPE string comment 'comment using the " character';
+DEFINE FIELD comment_using_single_qoute ON with_comment TYPE string comment "comment using the ' character";
+DEFINE FIELD comment_using_double_qoute ON with_comment TYPE string comment 'comment using the " character';
 
 COMMIT TRANSACTION;
