@@ -3,7 +3,7 @@ use std::io::Write;
 
 use convert_case::{Case, Casing};
 
-use crate::{Enum, FieldMeta, FieldType, Literal, TableMeta, Union};
+use crate::{config::Config, Enum, FieldMeta, FieldType, Literal, TableMeta, Union};
 
 #[derive(Debug)]
 enum Direction {
@@ -11,22 +11,18 @@ enum Direction {
     Out,
 }
 
-pub fn write_tables(
-    output_path: &str,
-    tables: &Vec<TableMeta>,
-    add_table_meta_types: bool,
-) -> anyhow::Result<()> {
+pub fn write_tables(tables: &Vec<TableMeta>, config: &Config) -> anyhow::Result<()> {
     println!("\nWriting type declaration file...");
 
-    let mut file = File::create(output_path)?;
+    let mut file = File::create(&config.output)?;
 
-    if add_table_meta_types {
+    if config.store_in_db {
         write!(&mut file, "{}\n", include_str!("assets/meta_types.ts"))?;
     }
 
     for table in tables {
-        let in_definition = get_table_definition(&table, Direction::In);
-        let out_definition = get_table_definition(&table, Direction::Out);
+        let in_definition = get_table_definition(&table, Direction::In, config);
+        let out_definition = get_table_definition(&table, Direction::Out, config);
 
         write!(file, "{in_definition}\n\n{out_definition}\n\n")?;
     }
@@ -34,9 +30,9 @@ pub fn write_tables(
     Ok(())
 }
 
-fn get_table_definition(table: &TableMeta, direction: Direction) -> String {
+fn get_table_definition(table: &TableMeta, direction: Direction, config: &Config) -> String {
     let interface_name = create_interface_name(&table.name, &direction);
-    let fields = get_object_definition(&table.fields, &direction, true, 1);
+    let fields = get_object_definition(&table.fields, &direction, config, true, 1);
 
     format!("export type {interface_name} = {fields}")
 }
@@ -44,6 +40,7 @@ fn get_table_definition(table: &TableMeta, direction: Direction) -> String {
 fn get_object_definition(
     fields: &Vec<FieldMeta>,
     direction: &Direction,
+    config: &Config,
     add_id: bool,
     depth: usize,
 ) -> String {
@@ -64,7 +61,7 @@ fn get_object_definition(
             _ => "",
         };
 
-        let ts_type = get_ts_type(r#type, direction, depth);
+        let ts_type = get_ts_type(r#type, direction, config, depth);
         rows.push(format!("{}{name}{optional}: {ts_type},", indent(depth)));
     }
 
@@ -73,7 +70,12 @@ fn get_object_definition(
     rows.join("\n")
 }
 
-fn get_ts_type<'a>(r#type: &FieldType, direction: &Direction, depth: usize) -> String {
+fn get_ts_type<'a>(
+    r#type: &FieldType,
+    direction: &Direction,
+    config: &Config,
+    depth: usize,
+) -> String {
     match r#type {
         FieldType::Any => "any".to_string(),
         FieldType::Null => "null".to_string(),
@@ -85,11 +87,11 @@ fn get_ts_type<'a>(r#type: &FieldType, direction: &Direction, depth: usize) -> S
             Direction::Out => "string".to_string(),
         },
         FieldType::Option { inner } => {
-            let inner = get_ts_type(inner, direction, depth);
+            let inner = get_ts_type(inner, direction, config, depth);
             format!("{inner} | undefined")
         }
         FieldType::Object { fields } => match fields {
-            Some(fields) => get_object_definition(&fields, direction, false, depth + 1),
+            Some(fields) => get_object_definition(&fields, direction, config, false, depth + 1),
             None => "object".to_string(),
         },
         FieldType::Record { table } => {
@@ -97,14 +99,17 @@ fn get_ts_type<'a>(r#type: &FieldType, direction: &Direction, depth: usize) -> S
 
             match direction {
                 Direction::In => format!("Required<{record_interface}>['id']"),
-                Direction::Out => format!("{record_interface} | {record_interface}['id']"),
+                Direction::Out => match config.links_fetched {
+                    true => record_interface,
+                    false => format!("{record_interface} | {record_interface}['id']"),
+                },
             }
         }
         FieldType::Union(union) => match union {
             Union::Normal { variants } => {
                 let ts_types: Vec<_> = variants
                     .into_iter()
-                    .map(|variant| get_ts_type(variant, direction, depth))
+                    .map(|variant| get_ts_type(variant, direction, config, depth))
                     .collect();
 
                 ts_types.join(" | ")
@@ -123,7 +128,7 @@ fn get_ts_type<'a>(r#type: &FieldType, direction: &Direction, depth: usize) -> S
             },
         },
         FieldType::Array { item } => {
-            let item_ts_type = get_ts_type(item, direction, depth);
+            let item_ts_type = get_ts_type(item, direction, config, depth);
 
             format!("Array<{item_ts_type}>")
         }
@@ -133,7 +138,7 @@ fn get_ts_type<'a>(r#type: &FieldType, direction: &Direction, depth: usize) -> S
             Literal::Array { items } => {
                 let ts_types: Vec<_> = items
                     .into_iter()
-                    .map(|kind| get_ts_type(kind, direction, depth))
+                    .map(|kind| get_ts_type(kind, direction, config, depth))
                     .collect();
 
                 format!("[{}]", ts_types.join(", "))

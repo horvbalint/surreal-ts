@@ -38,13 +38,13 @@ mod ts;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut config = Config::parse();
-    if let Some(path) = config.config_file_path {
+    if let Some(path) = &config.config_file_path {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
         config = serde_json::from_reader(reader)?
     };
 
-    let (Some(namespace), Some(database)) = (config.namespace, config.database) else {
+    let (Some(namespace), Some(database)) = (&config.namespace, &config.database) else {
         println!("No 'namespace' or 'database' provided in the config, see the help output for correct usage:\n");
         Config::command().print_help().ok();
         return Ok(());
@@ -69,11 +69,11 @@ async fn main() -> anyhow::Result<()> {
         .collect();
 
     if !config.skip_ts_generation {
-        ts::write_tables(&config.output, &table_metas, config.store_in_db)?;
+        ts::write_tables(&table_metas, &config)?;
     }
 
     if config.store_in_db {
-        meta::store_tables(&mut db, &config.metadata_table_name, table_metas).await?;
+        meta::store_tables(&mut db, table_metas, &config).await?;
     }
 
     println!("\nAll operations done ✅");

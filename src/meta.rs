@@ -1,13 +1,14 @@
 use surrealdb::{engine::any::Any, Surreal};
 
-use crate::TableMeta;
+use crate::{config::Config, TableMeta};
 
 pub async fn store_tables(
     db: &mut Surreal<Any>,
-    metadata_table_name: &str,
     tables: Vec<TableMeta>,
+    config: &Config,
 ) -> anyhow::Result<()> {
     println!("Writing table metadata into database...");
+    let metadata_table_name = &config.metadata_table_name;
 
     db.query(format!(
         "

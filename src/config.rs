@@ -49,6 +49,11 @@ pub struct Config {
     #[serde(default = "default_output")]
     pub output: String,
 
+    /// Treat record types as FETCHED version of the linked table
+    #[arg(short, long)]
+    #[serde(default)]
+    pub links_fetched: bool,
+
     /// Path to the configuration JSON file
     #[arg(short, long)]
     pub config_file_path: Option<String>,
