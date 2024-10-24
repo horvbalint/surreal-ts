@@ -30,6 +30,7 @@ use surrealdb::sql::{statements::DefineStatement, Query, Statement};
 use surrealdb::{engine::any::Any, opt::auth::Root, Surreal};
 
 use surrealdb::syn::parser::Parser as SurrealParser;
+use ts::TSGenerator;
 
 mod config;
 mod meta;
@@ -69,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
         .collect();
 
     if !config.skip_ts_generation {
-        ts::write_tables(&table_metas, &config)?;
+        TSGenerator::new(&config).write_tables(&table_metas)?;
     }
 
     if config.store_in_db {
