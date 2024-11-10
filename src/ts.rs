@@ -64,11 +64,17 @@ impl<'a> TSGenerator<'a> {
             rows.push(format!("{}{id}", indent(depth)));
         }
 
-        for FieldMeta { name, r#type, .. } in fields {
-            let optional = match r#type {
-                FieldType::Option { .. } => "?",
-                _ => "",
-            };
+        for FieldMeta {
+            name,
+            r#type,
+            has_default,
+            ..
+        } in fields
+        {
+            let optional = matches!(r#type, FieldType::Option { .. })
+                || (matches!(direction, Direction::In) && *has_default);
+
+            let optional = if optional { "?" } else { "" };
 
             let ts_type = self.get_ts_type(r#type, direction, depth);
             rows.push(format!("{}{name}{optional}: {ts_type},", indent(depth)));

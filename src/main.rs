@@ -166,6 +166,7 @@ struct TableMeta {
 struct FieldMeta {
     name: String,
     r#type: FieldType,
+    has_default: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     comment: Option<String>,
 }
@@ -227,6 +228,7 @@ fn get_field_metas(fields: &Vec<DefineFieldStatement>, prefix: String) -> Vec<Fi
         name,
         kind,
         comment,
+        default,
         ..
     }) = &fields.next()
     {
@@ -236,6 +238,7 @@ fn get_field_metas(fields: &Vec<DefineFieldStatement>, prefix: String) -> Vec<Fi
         field_metas.push(FieldMeta {
             name,
             r#type: get_field_type(path, kind.clone(), &mut fields),
+            has_default: default.is_some(),
             comment: comment.clone().map(|c| c.to_string()),
         });
     }
@@ -319,6 +322,7 @@ fn get_field_type<'a>(
                         FieldMeta {
                             name,
                             r#type: field_type,
+                            has_default: false,
                             comment: None,
                         }
                     })

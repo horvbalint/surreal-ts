@@ -9,6 +9,7 @@ export type FieldMeta = {
   name: string;
   comment?: string;
   type: FieldType;
+  hasDefault: boolean;
 };
 
 export type FieldType =
