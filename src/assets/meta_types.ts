@@ -1,15 +1,19 @@
+export type Tables = Record<string, TableMeta>;
+export type Fields = Record<string, FieldMeta>;
+
 export type TableMeta = {
-  id: string;
-  name: string;
-  fields: FieldMeta[];
+  fields: Record<string, FieldMeta>;
   comment?: string;
 };
 
+export type TableMetaFromDb = TableMeta & {
+  id: string;
+};
+
 export type FieldMeta = {
-  name: string;
   comment?: string;
   type: FieldType;
-  hasDefault: boolean;
+  hasDefault?: true;
 };
 
 export type FieldType =
@@ -37,7 +41,7 @@ export namespace FieldTypes {
 
   export type Object = {
     name: "object";
-    fields: null | FieldMeta[];
+    fields: null | Fields;
   };
 
   export type Record = {

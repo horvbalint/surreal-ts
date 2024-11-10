@@ -3,7 +3,7 @@ use std::io::Write;
 
 use convert_case::{Case, Casing};
 
-use crate::{config::Config, Enum, FieldMeta, FieldType, Literal, TableMeta, Union};
+use crate::{config::Config, Enum, FieldMetas, FieldType, Literal, TableMeta, TableMetas, Union};
 
 #[derive(Debug)]
 enum Direction {
@@ -20,35 +20,46 @@ impl<'a> TSGenerator<'a> {
         Self { config }
     }
 
-    pub fn write_tables(&self, tables: &Vec<TableMeta>) -> anyhow::Result<()> {
+    pub fn write_tables(&self, tables: &TableMetas) -> anyhow::Result<()> {
         println!("\nWriting type declaration file...");
 
         let mut file = File::create(&self.config.output)?;
 
-        if self.config.store_in_db {
-            write!(&mut file, "{}\n", include_str!("assets/meta_types.ts"))?;
-        }
-
-        for table in tables {
-            let in_definition = self.get_table_definition(&table, Direction::In);
-            let out_definition = self.get_table_definition(&table, Direction::Out);
+        writeln!(file, "// ---------- TABLE TYPES ----------")?;
+        for (name, meta) in tables {
+            let in_definition = self.get_table_definition(&name, &meta, Direction::In);
+            let out_definition = self.get_table_definition(&name, &meta, Direction::Out);
 
             write!(file, "{in_definition}\n\n{out_definition}\n\n")?;
+        }
+
+        if !self.config.no_meta {
+            writeln!(file, "// ---------- TABLE META STRUCTURE ----------")?;
+            let content = serde_json::to_string_pretty(tables)?;
+            write!(
+                file,
+                "export const tables = {content} as const satisfies Record<string, TableMeta>\n\n"
+            )?;
+        }
+
+        if self.config.store_meta_in_db || !self.config.no_meta {
+            writeln!(file, "// ---------- TABLE META TYPES ----------")?;
+            write!(&mut file, "{}\n", include_str!("../assets/meta_types.ts"))?;
         }
 
         Ok(())
     }
 
-    fn get_table_definition(&self, table: &TableMeta, direction: Direction) -> String {
-        let interface_name = create_interface_name(&table.name, &direction);
-        let fields = self.get_object_definition(&table.fields, &direction, true, 1);
+    fn get_table_definition(&self, name: &str, meta: &TableMeta, direction: Direction) -> String {
+        let interface_name = create_interface_name(name, &direction);
+        let fields = self.get_object_definition(&meta.fields, &direction, true, 1);
 
         format!("export type {interface_name} = {fields}")
     }
 
     fn get_object_definition(
         &self,
-        fields: &Vec<FieldMeta>,
+        fields: &FieldMetas,
         direction: &Direction,
         add_id: bool,
         depth: usize,
@@ -64,19 +75,13 @@ impl<'a> TSGenerator<'a> {
             rows.push(format!("{}{id}", indent(depth)));
         }
 
-        for FieldMeta {
-            name,
-            r#type,
-            has_default,
-            ..
-        } in fields
-        {
-            let optional = matches!(r#type, FieldType::Option { .. })
-                || (matches!(direction, Direction::In) && *has_default);
+        for (name, meta) in fields {
+            let optional = matches!(meta.r#type, FieldType::Option { .. })
+                || (matches!(direction, Direction::In) && meta.has_default);
 
             let optional = if optional { "?" } else { "" };
 
-            let ts_type = self.get_ts_type(r#type, direction, depth);
+            let ts_type = self.get_ts_type(&meta.r#type, direction, depth);
             rows.push(format!("{}{name}{optional}: {ts_type},", indent(depth)));
         }
 

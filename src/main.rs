@@ -24,17 +24,16 @@ use clap::{CommandFactory, Parser};
 use config::Config;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use surrealdb::sql::statements::{DefineFieldStatement, DefineTableStatement};
+use surrealdb::sql::statements::DefineFieldStatement;
 use surrealdb::sql::{self, Kind};
 use surrealdb::sql::{statements::DefineStatement, Query, Statement};
 use surrealdb::{engine::any::Any, opt::auth::Root, Surreal};
 
+use outputs::{db, ts::TSGenerator};
 use surrealdb::syn::parser::Parser as SurrealParser;
-use ts::TSGenerator;
 
 mod config;
-mod meta;
-mod ts;
+mod outputs;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -59,22 +58,14 @@ async fn main() -> anyhow::Result<()> {
     .await?;
     db.use_ns(namespace).use_db(database).await?;
 
-    let tables = get_tables_for_db(&mut db).await?;
-    let table_metas: Vec<_> = tables
-        .into_iter()
-        .map(|table| TableMeta {
-            name: table.table.name.to_string(),
-            fields: get_field_metas(&table.fields, "".to_string()),
-            comment: table.table.comment.map(|c| c.to_string()),
-        })
-        .collect();
+    let table_metas = get_tables_metas_for_db(&mut db).await?;
 
     if !config.skip_ts_generation {
         TSGenerator::new(&config).write_tables(&table_metas)?;
     }
 
-    if config.store_in_db {
-        meta::store_tables(&mut db, table_metas, &config).await?;
+    if config.store_meta_in_db {
+        db::store_tables_in_db(&mut db, table_metas, &config).await?;
     }
 
     println!("\nAll operations done ✅");
@@ -92,14 +83,8 @@ struct TableInfo {
     fields: BTreeMap<String, String>,
 }
 
-#[derive(Debug)]
-struct Table {
-    table: DefineTableStatement,
-    fields: Vec<DefineFieldStatement>,
-}
-
-async fn get_tables_for_db(db: &mut Surreal<Any>) -> anyhow::Result<Vec<Table>> {
-    let mut tables = vec![];
+async fn get_tables_metas_for_db(db: &mut Surreal<Any>) -> anyhow::Result<TableMetas> {
+    let mut tables = BTreeMap::new();
 
     let info: Option<DatabaseInfo> = db.query("INFO FOR DB").await?.take(0)?;
     let info = info.expect("Failed to get information of the database.");
@@ -114,14 +99,19 @@ async fn get_tables_for_db(db: &mut Surreal<Any>) -> anyhow::Result<Vec<Table>> 
 
         println!("Processing table: {}", table.name);
 
-        let fields = get_fields_for_table(db, &table.name).await?;
-        tables.push(Table { table, fields });
+        let fields = get_field_metas_for_table(db, &table.name).await?;
+        let table_meta = TableMeta {
+            fields: get_field_metas(&fields, "".to_string()),
+            comment: table.comment.map(|c| c.to_string()),
+        };
+
+        tables.insert(table.name.to_string(), table_meta);
     }
 
     Ok(tables)
 }
 
-async fn get_fields_for_table(
+async fn get_field_metas_for_table(
     db: &mut Surreal<Any>,
     table: &str,
 ) -> anyhow::Result<Vec<DefineFieldStatement>> {
@@ -152,11 +142,13 @@ fn parse_sql(sql: &str) -> Query {
     result
 }
 
+type TableMetas = BTreeMap<String, TableMeta>;
+type FieldMetas = BTreeMap<String, FieldMeta>;
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TableMeta {
-    name: String,
-    fields: Vec<FieldMeta>,
+    fields: FieldMetas,
     #[serde(skip_serializing_if = "Option::is_none")]
     comment: Option<String>,
 }
@@ -164,8 +156,8 @@ struct TableMeta {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct FieldMeta {
-    name: String,
     r#type: FieldType,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
     has_default: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     comment: Option<String>,
@@ -184,7 +176,7 @@ enum FieldType {
     Option { inner: Box<FieldType> },
     Record { table: String },
     Array { item: Box<FieldType> },
-    Object { fields: Option<Vec<FieldMeta>> },
+    Object { fields: Option<FieldMetas> },
     Union(Union),
     Literal(Literal),
 }
@@ -220,27 +212,21 @@ impl Into<FieldType> for Literal {
     }
 }
 
-fn get_field_metas(fields: &Vec<DefineFieldStatement>, prefix: String) -> Vec<FieldMeta> {
-    let mut field_metas = vec![];
+fn get_field_metas(fields: &Vec<DefineFieldStatement>, prefix: String) -> FieldMetas {
+    let mut field_metas = BTreeMap::new();
 
     let mut fields = fields.into_iter();
-    while let Some(DefineFieldStatement {
-        name,
-        kind,
-        comment,
-        default,
-        ..
-    }) = &fields.next()
-    {
-        let path = name.to_string();
+    while let Some(field) = &fields.next() {
+        let path = field.name.to_string();
         let name = path[prefix.len()..].to_string();
 
-        field_metas.push(FieldMeta {
-            name,
-            r#type: get_field_type(path, kind.clone(), &mut fields),
-            has_default: default.is_some(),
-            comment: comment.clone().map(|c| c.to_string()),
-        });
+        let field_meta = FieldMeta {
+            r#type: get_field_type(path, field.kind.clone(), &mut fields),
+            has_default: field.default.is_some(),
+            comment: field.comment.clone().map(|c| c.to_string()),
+        };
+
+        field_metas.insert(name, field_meta);
     }
 
     field_metas
@@ -319,12 +305,13 @@ fn get_field_type<'a>(
                 sql::Literal::Object(map) => {
                     let fields = map.into_iter().map(|(name, kind)| {
                         let field_type = get_field_type(format!("{path}.{name}"), Some(kind), &mut iter::empty());
-                        FieldMeta {
-                            name,
+                        let field_meta = FieldMeta {
                             r#type: field_type,
                             has_default: false,
                             comment: None,
-                        }
+                        };
+
+                        (name, field_meta)
                     })
                     .collect();
 

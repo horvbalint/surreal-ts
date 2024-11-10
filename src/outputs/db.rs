@@ -1,10 +1,10 @@
 use surrealdb::{engine::any::Any, Surreal};
 
-use crate::{config::Config, TableMeta};
+use crate::{config::Config, TableMeta, TableMetas};
 
-pub async fn store_tables(
+pub async fn store_tables_in_db(
     db: &mut Surreal<Any>,
-    tables: Vec<TableMeta>,
+    tables: TableMetas,
     config: &Config,
 ) -> anyhow::Result<()> {
     println!("Writing table metadata into database...");
@@ -20,8 +20,8 @@ pub async fn store_tables(
     ))
     .await?;
 
-    for table_meta in tables {
-        db.create::<Option<TableMeta>>((metadata_table_name, table_meta.name.clone()))
+    for (name, table_meta) in tables {
+        db.create::<Option<TableMeta>>((metadata_table_name, name.clone()))
             .content(table_meta)
             .await?;
     }

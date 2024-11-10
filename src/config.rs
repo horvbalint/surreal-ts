@@ -29,17 +29,27 @@ pub struct Config {
     #[arg(short, long)]
     pub database: Option<String>,
 
+    /// Treat record types as FETCHED version of the linked table
+    #[arg(short, long)]
+    #[serde(default)]
+    pub links_fetched: bool,
+
     /// Store generated table and field metadata into the database
     #[arg(short, long)]
     #[serde(default)]
-    pub store_in_db: bool,
+    pub store_meta_in_db: bool,
 
     /// Name of the table to use when the 'store-in-db' flag is enabled
-    #[arg(short, long, default_value_t = default_metadata_table())]
+    #[arg(short='t', long, default_value_t = default_metadata_table())]
     #[serde(default = "default_metadata_table")]
     pub metadata_table_name: String,
 
-    /// Skip the generation of a typescript definition file
+    /// Skip adding the table meta descriptors to the output ts file
+    #[arg(long)]
+    #[serde(default)]
+    pub no_meta: bool,
+
+    /// Skip the generation of the typescript definition file
     #[arg(long)]
     #[serde(default)]
     pub skip_ts_generation: bool,
@@ -48,11 +58,6 @@ pub struct Config {
     #[arg(short, long, default_value_t = default_output())]
     #[serde(default = "default_output")]
     pub output: String,
-
-    /// Treat record types as FETCHED version of the linked table
-    #[arg(short, long)]
-    #[serde(default)]
-    pub links_fetched: bool,
 
     /// Path to the configuration JSON file
     #[arg(short, long)]
@@ -76,5 +81,5 @@ fn default_metadata_table() -> String {
 }
 
 fn default_output() -> String {
-    "db.d.ts".to_string()
+    "db.ts".to_string()
 }
