@@ -173,6 +173,7 @@ enum FieldType {
     String,
     Number,
     Date,
+    Bytes,
     Option { inner: Box<FieldType> },
     Record { table: String },
     Array { item: Box<FieldType> },
@@ -246,6 +247,7 @@ fn get_field_type<'a>(
             Kind::Decimal | Kind::Float | Kind::Int | Kind::Number => FieldType::Number,
             Kind::String | Kind::Uuid | Kind::Duration => FieldType::String,
             Kind::Datetime => FieldType::Date,
+            Kind::Bytes => FieldType::Bytes,
             Kind::Option(kind) => {
                 let inner = get_field_type(path, Some(*kind), fields);
                 FieldType::Option { inner: inner.into() }

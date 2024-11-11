@@ -97,6 +97,7 @@ impl<'a> TSGenerator<'a> {
             FieldType::Boolean => "boolean".to_string(),
             FieldType::Number => "number".to_string(),
             FieldType::String => "string".to_string(),
+            FieldType::Bytes => "ArrayBuffer".to_string(),
             FieldType::Date => match direction {
                 Direction::In => "Date | string".to_string(),
                 Direction::Out => "string".to_string(),

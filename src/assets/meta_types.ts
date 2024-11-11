@@ -17,7 +17,7 @@ export type FieldMeta = {
 };
 
 export type FieldType =
-  | FieldTypes.Primitive
+  | FieldTypes.Simple
   | FieldTypes.Option
   | FieldTypes.Object
   | FieldTypes.Record
@@ -30,8 +30,8 @@ export type FieldType =
   | FieldTypes.LiteralArray;
 
 export namespace FieldTypes {
-  export type Primitive = {
-    name: "any" | "null" | "boolean" | "string" | "number" | "date";
+  export type Simple = {
+    name: "any" | "null" | "boolean" | "string" | "number" | "date" | "bytes";
   };
 
   export type Option = {
