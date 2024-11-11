@@ -6,13 +6,15 @@ license = "GPL-3.0-only"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.89"
-clap = { version = "4.5.19", features = ["derive"] }
+anyhow = "1.0.93"
+clap = { version = "4.5.20", features = ["derive"] }
 convert_case = "0.6.0"
-nom = "7.1.3"
-serde = "1.0.210"
-surrealdb = { version = "2.0.3", features = ["protocol-http"] }
-tokio = "1.40.0"
+itertools = "0.13.0"
+reblessive = "0.4.1"
+serde = "1.0.214"
+serde_json = "1.0.132"
+surrealdb = { version = "2.0.4", features = ["protocol-http"] }
+tokio = "1.41.1"
 
 [profile.release]
 strip = true
