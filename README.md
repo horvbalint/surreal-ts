@@ -44,7 +44,9 @@ After this you can run `npm run generate-types` to run surreal-ts alone or `npm 
 
 ### As a standalone tool
 
-Since surreal-ts is an npm package it can also be installed/started with `npx surreal-ts`, or to always get the latest version, use: `npx surreal-ts@latest` (recommended).
+Since surreal-ts is an npm package it can also be installed globaly with `npm i -g surreal-ts` and then just use the command `surreal-ts` to run it anywhere.
+
+You can also install and run it at once with `npx surreal-ts`, or to always get the latest version, use: `npx surreal-ts@latest`.
 
 Alternatively one can also clone this repository and build it for themself with `cargo build`.
 
