@@ -10,9 +10,9 @@ Surreal-ts is a simple to use typescript type definition and table structure gen
   - simple literals (eg.: 'foo' | 'bar')
   - complex literals (eg.: object literals)
   - arbitrary nesting
-- Generate an object describing the structure of the tables and other metadata
-  - append this structure to the output typescript file
-  - save this structure inside the database
+- Generates an object describing the structure of the tables and other metadata
+  - appends this structure to the output typescript file
+  - saves this structure inside the database
 
 ## Compatibility
 
@@ -22,7 +22,7 @@ Latest SurrealDB version tested: `2.0.4`
 
 ## Installation
 
-Surreal-ts is a CLI tool written in Rust, but it is published on npm, so there are multiple ways to install and run it.
+Surreal-ts is a CLI tool written in Rust but it is published on npm, so there are multiple ways to install and run it.
 
 ### As a dependency
 
@@ -44,9 +44,9 @@ After this you can run `npm run generate-types` to run surreal-ts alone or `npm 
 
 ### As a standalone tool
 
-Since surreal-ts is an npm package it can also be installed globaly with `npm i -g surreal-ts` and then just use the command `surreal-ts` to run it anywhere.
+Since surreal-ts is an npm package it can also be installed globaly with `npm i -g surreal-ts` and then just use the `surreal-ts` command to run it anywhere.
 
-You can also install and run it at once with `npx surreal-ts`, or to always get the latest version, use: `npx surreal-ts@latest`.
+You can also install and run it at once with `npx surreal-ts`, or to always get the latest version use: `npx surreal-ts@latest`.
 
 Alternatively one can also clone this repository and build it for themself with `cargo build`.
 
@@ -67,7 +67,7 @@ Options:
   -d, --database <DATABASE>
           The database to use
   -l, --links-fetched
-          Treat record types as FETCHED version of the linked table
+          Treat record types as FETCHED versions of the linked tables
   -s, --store-meta-in-db
           Store generated table and field metadata into the database
   -t, --metadata-table-name <METADATA_TABLE_NAME>
@@ -77,7 +77,7 @@ Options:
       --skip-ts-generation
           Skip the generation of the typescript definition file
   -o, --output <OUTPUT>
-          Path where the typescript defintion file will be generated [default: db.ts]
+          Path where the typescript defintion file will be generated at [default: db.ts]
   -c, --config-file-path <CONFIG_FILE_PATH>
           Path to the configuration JSON file
   -h, --help
@@ -100,15 +100,14 @@ This section contains two version for every table found in the database. One of 
 
 `In*` should be used for every action where you are sending data to the database and `Out*` should be used for the responses from the database.
 
-All table name will be converted to PascalCase for the type definition names.
+The table names will be converted to PascalCase in the type names.
 
 ### Table structures and metadata
 
 This section contains an exported typescript object describing every table and their fields. This object can be used to get the possible values of a literal field or to generate ui elements based on the database structure.
 
 If the `store-meta-in-db` options is true, surreal-ts will write this object back into the database inside the table specified in option `metadata-table-name`.
-
-The generated table will contain a record for every table in the database, where each records id is the tables name. The 'user' table, will have an id like: `table_meta:user`. This makes it easy to query the structure and metadata of a specific table.
+The generated table will contain a record for every table in the database, where each record's id is the table's name. The 'user' table, will have an id like: `table_meta:user`. This makes it easy to query the structure and metadata of a specific table.
 
 The form of this object is described by the content of the following section.
 
