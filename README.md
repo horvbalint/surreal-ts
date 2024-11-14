@@ -22,13 +22,31 @@ Latest SurrealDB version tested: `2.0.4`
 
 ## Installation
 
-Surreal-ts is a CLI tool written in Rust, but it is published on npm, so it can be easily installed/started with: `npx surreal-ts`.
+Surreal-ts is a CLI tool written in Rust, but it is published on npm, so there are multiple ways to install and run it.
 
-If you want to always get the latest version, use: `npx surreal-ts@latest` (recommended).
+### As a dependency
+
+It is possible to install surreal-ts like other npm packages and then use it inside the package.json's scripts section, like this:
+
+```json
+{
+  "scripts": {
+    "generate-types": "surreal-ts [options]" // see options in the next section
+    "dev": "surreal-ts [options] && other-command" // you can also run it before your app starts
+  },
+  "dependecies": {
+    "surreal-ts: "^3.0.0"
+  }
+}
+```
+
+After this you can run `npm run generate-types` to run surreal-ts alone or `npm run dev` to run it before an other command.
+
+### As a standalone tool
+
+Since surreal-ts is an npm package it can also be installed/started with `npx surreal-ts`, or to always get the latest version, use: `npx surreal-ts@latest` (recommended).
 
 Alternatively one can also clone this repository and build it for themself with `cargo build`.
-
-**Thank you [@orhun](https://github.com/orhun) for this interesting blog-post on Rust via npx https://blog.orhun.dev/packaging-rust-for-npm/ !**
 
 ## Usage
 
@@ -68,7 +86,7 @@ Options:
 
 ### File configuration
 
-Since Surreal-ts supports many configuration options and projects usually use the same options every time, it is possible to provide all the options in the form of a `json` file. The keys of the json are the long names of the cli options.
+Since surreal-ts supports many configuration options and projects usually use the same options every time, it is possible to provide all the options in the form of a `json` file. The keys of the json are the long names of the cli options.
 
 ## Output
 
@@ -192,6 +210,6 @@ export namespace FieldTypes {
 
 ## Disclaimer
 
-This project was created as an experiment, and while it works for my usecase it might not work for everyone. I do not take responsibility for problems that might occure due to using this software.
+This project was created in my freetime as a hobby and while it works for my usecase it might not work for everyone. I do not take responsibility for problems that might occure due to using this software.
 
 Suggestions and contributions are welcomed :)
