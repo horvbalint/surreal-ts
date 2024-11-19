@@ -35,7 +35,7 @@ It is possible to install surreal-ts like other npm packages and then use it ins
     "dev": "surreal-ts [options] && other-command" // you can also run it before your app starts
   },
   "dependecies": {
-    "surreal-ts: "^3.0.0"
+    "surreal-ts: "^3.0.0-beta.0"
   }
 }
 ```
