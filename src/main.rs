@@ -45,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let (Some(namespace), Some(database)) = (&config.namespace, &config.database) else {
-        println!("No 'namespace' or 'database' provided in the config, see the help output for correct usage:\n");
+        eprintln!("No 'namespace' or 'database' provided in the config, see the help output for correct usage:\n");
         Config::command().print_help().ok();
         return Ok(());
     };
@@ -56,7 +56,22 @@ async fn main() -> anyhow::Result<()> {
         password: &config.password,
     })
     .await?;
-    db.use_ns(namespace).use_db(database).await?;
+
+    let root_info: Option<RootInfo> = db.query("INFO FOR ROOT").await?.take(0)?;
+    let root_info = root_info.expect("Failed to get information of the namespaces.");
+    if !root_info.namespaces.contains_key(namespace) {
+        eprintln!("No namespace '{namespace}' found in the connection!");
+        return Ok(());
+    }
+    db.use_ns(namespace).await?;
+
+    let ns_info: Option<NamespaceInfo> = db.query("INFO FOR NS").await?.take(0)?;
+    let ns_info = ns_info.expect("Failed to get information of the databases.");
+    if !ns_info.databases.contains_key(database) {
+        eprintln!("No database '{database}' found in the namespace!");
+        return Ok(());
+    }
+    db.use_db(database).await?;
 
     let table_metas = get_tables_metas_for_db(&mut db).await?;
 
@@ -71,6 +86,16 @@ async fn main() -> anyhow::Result<()> {
     println!("\nAll operations done ✅");
 
     Ok(())
+}
+
+#[derive(Deserialize, Debug)]
+struct RootInfo {
+    namespaces: BTreeMap<String, String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct NamespaceInfo {
+    databases: BTreeMap<String, String>,
 }
 
 #[derive(Deserialize, Debug)]
