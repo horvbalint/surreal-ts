@@ -200,7 +200,7 @@ enum FieldType {
     Date,
     Bytes,
     Option { inner: Box<FieldType> },
-    Record { table: String },
+    Record { tables: Vec<String> },
     Array { item: Box<FieldType> },
     Object { fields: Option<FieldMetas> },
     Union(Union),
@@ -292,9 +292,9 @@ fn get_field_type<'a>(
                     FieldType::Object{ fields: Some(subfields) }
                 }
             }
-            Kind::Record(vec) => {
-                let record_interface = vec[0].to_string();
-                FieldType::Record{ table: record_interface }
+            Kind::Record(tables) => {
+                let tables = tables.iter().map(|t| t.to_string()).collect();
+                FieldType::Record{ tables }
             }
             Kind::Either(kinds) => {
                 let variants: Vec<_> = kinds

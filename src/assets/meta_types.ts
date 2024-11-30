@@ -46,7 +46,7 @@ export namespace FieldTypes {
 
   export type Record = {
     name: "record";
-    table: string;
+    tables: string[];
   };
 
   export type Array = {

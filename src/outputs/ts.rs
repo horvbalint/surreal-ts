@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::Write;
 
 use convert_case::{Case, Casing};
+use itertools::Itertools;
 
 use crate::{config::Config, Enum, FieldMetas, FieldType, Literal, TableMeta, TableMetas, Union};
 
@@ -110,15 +111,32 @@ impl<'a> TSGenerator<'a> {
                 Some(fields) => self.get_object_definition(&fields, direction, false, depth + 1),
                 None => "object".to_string(),
             },
-            FieldType::Record { table } => {
-                let record_interface = create_interface_name(&table, direction);
+            FieldType::Record { tables } => {
+                if tables.is_empty() {
+                    match direction {
+                        Direction::In => format!("string"),
+                        Direction::Out => match self.config.links_fetched {
+                            true => "unknown".to_string(),
+                            false => format!("unknown | string"),
+                        },
+                    }
+                } else {
+                    tables
+                        .iter()
+                        .map(|table| {
+                            let record_interface = create_interface_name(&table, direction);
 
-                match direction {
-                    Direction::In => format!("Required<{record_interface}>['id']"),
-                    Direction::Out => match self.config.links_fetched {
-                        true => record_interface,
-                        false => format!("{record_interface} | {record_interface}['id']"),
-                    },
+                            match direction {
+                                Direction::In => format!("Required<{record_interface}>['id']"),
+                                Direction::Out => match self.config.links_fetched {
+                                    true => record_interface,
+                                    false => {
+                                        format!("{record_interface} | {record_interface}['id']")
+                                    }
+                                },
+                            }
+                        })
+                        .join(" | ")
                 }
             }
             FieldType::Union(union) => match union {

@@ -18,7 +18,7 @@ Surreal-ts is a simple to use typescript type definition and table structure gen
 
 I try to keep this package up-to-date, because I am using it myself, but I can't always keep-up with the braking changes. If you find that surreal-ts is not working for you, please open an issue.
 
-Latest SurrealDB version tested: `2.0.4`
+Latest SurrealDB version tested: `2.1.2`
 
 ## Installation
 
@@ -164,7 +164,7 @@ export namespace FieldTypes {
 
   export type Record = {
     name: "record";
-    table: string;
+    tables: string[];
   };
 
   export type Array = {
