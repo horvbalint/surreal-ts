@@ -28,14 +28,14 @@ Surreal-ts is a CLI tool written in Rust but it is published on npm, so there ar
 
 It is possible to install surreal-ts like other npm packages and then use it inside the package.json's scripts section, like this:
 
-```json
+```jsonc
 {
   "scripts": {
-    "generate-types": "surreal-ts [options]" // see options in the next section
+    "generate-types": "surreal-ts [options]", // see options in the next section
     "dev": "surreal-ts [options] && other-command" // you can also run it before your app starts
   },
-  "dependecies": {
-    "surreal-ts: "^3.0.0-beta.4"
+  "dependencies": {
+    "surreal-ts": "^3.0.0-beta.4"
   }
 }
 ```
