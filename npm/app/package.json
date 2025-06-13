@@ -1,6 +1,6 @@
 {
   "name": "surreal-ts",
-  "version": "3.0.0-beta.3",
+  "version": "3.0.0-beta.4",
   "author": "horvbalint (https://github.com/horvbalint)",
   "description": "A simple to use typescript interface genearator for SurrealDB databases.",
   "keywords": [
@@ -24,10 +24,10 @@
     "dev": "node src/index.js"
   },
   "optionalDependencies": {
-    "surreal-ts-linux-x64": "3.0.0-beta.3",
-    "surreal-ts-linux-arm64": "3.0.0-beta.3",
-    "surreal-ts-darwin-x64": "3.0.0-beta.3",
-    "surreal-ts-darwin-arm64": "3.0.0-beta.3",
-    "surreal-ts-windows-x64": "3.0.0-beta.3"
+    "surreal-ts-linux-x64": "3.0.0-beta.4",
+    "surreal-ts-linux-arm64": "3.0.0-beta.4",
+    "surreal-ts-darwin-x64": "3.0.0-beta.4",
+    "surreal-ts-darwin-arm64": "3.0.0-beta.4",
+    "surreal-ts-windows-x64": "3.0.0-beta.4"
   }
 }
