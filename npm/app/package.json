@@ -2,14 +2,14 @@
   "name": "surreal-ts",
   "version": "3.0.0-beta.4",
   "author": "horvbalint (https://github.com/horvbalint)",
-  "description": "A simple to use typescript interface genearator for SurrealDB databases.",
+  "description": "A simple to use typescript type definition generator for SurrealDB.",
   "keywords": [
     "SurrealDB",
     "typescript",
     "surql",
     "surreal",
     "generator",
-    "interface"
+    "type"
   ],
   "homepage": "https://github.com/horvbalint/surreal-ts",
   "license": "GPL-3.0-only",

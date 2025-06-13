@@ -2,12 +2,8 @@ export type Tables = Record<string, TableMeta>;
 export type Fields = Record<string, FieldMeta>;
 
 export type TableMeta = {
-  fields: Record<string, FieldMeta>;
+  fields: Fields;
   comment?: string;
-};
-
-export type TableMetaFromDb = TableMeta & {
-  id: string;
 };
 
 export type FieldMeta = {
@@ -89,3 +85,7 @@ export namespace FieldTypes {
     items: FieldType[];
   };
 }
+
+export type TableMetaFromDb = TableMeta & {
+  id: string;
+};

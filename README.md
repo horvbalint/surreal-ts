@@ -18,7 +18,7 @@ Surreal-ts is a simple to use typescript type definition and table structure gen
 
 I try to keep this package up-to-date, because I am using it myself, but I can't always keep-up with the braking changes. If you find that surreal-ts is not working for you, please open an issue.
 
-Latest SurrealDB version tested: `2.1.2`
+Latest SurrealDB version tested: `2.3.3`
 
 ## Installation
 
@@ -122,12 +122,8 @@ export type Tables = Record<string, TableMeta>;
 export type Fields = Record<string, FieldMeta>;
 
 export type TableMeta = {
-  fields: Record<string, FieldMeta>;
+  fields: Fields;
   comment?: string;
-};
-
-export type TableMetaFromDb = TableMeta & {
-  id: string;
 };
 
 export type FieldMeta = {
@@ -151,7 +147,7 @@ export type FieldType =
 
 export namespace FieldTypes {
   export type Simple = {
-    name: "any" | "null" | "boolean" | "string" | "number" | "date" | "bytes";
+    name: "any" | "null" | "boolean" | "string" | "number" | "decimal" | "date" | "duration" | "bytes" | "uuid";
   };
 
   export type Option = {
@@ -209,6 +205,10 @@ export namespace FieldTypes {
     items: FieldType[];
   };
 }
+
+export type TableMetaFromDb = TableMeta & {
+  id: string;
+};
 ```
 
 ## Disclaimer

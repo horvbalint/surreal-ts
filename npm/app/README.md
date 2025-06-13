@@ -18,7 +18,7 @@ Surreal-ts is a simple to use typescript type definition and table structure gen
 
 I try to keep this package up-to-date, because I am using it myself, but I can't always keep-up with the braking changes. If you find that surreal-ts is not working for you, please open an issue.
 
-Latest SurrealDB version tested: `2.1.2`
+Latest SurrealDB version tested: `2.3.3`
 
 ## Installation
 
@@ -67,17 +67,19 @@ Options:
   -d, --database <DATABASE>
           The database to use
   -l, --links-fetched
-          Treat record types as FETCHED versions of the linked tables
+          Treat record types as FETCHED version of the linked table
+  -t, --target-sdk
+          Use the utility types from the JS SDK in the output file
   -s, --store-meta-in-db
           Store generated table and field metadata into the database
-  -t, --metadata-table-name <METADATA_TABLE_NAME>
+  -m, --metadata-table-name <METADATA_TABLE_NAME>
           Name of the table to use when the 'store-in-db' flag is enabled [default: table_meta]
       --no-meta
           Skip adding the table meta descriptors to the output ts file
       --skip-ts-generation
           Skip the generation of the typescript definition file
   -o, --output <OUTPUT>
-          Path where the typescript defintion file will be generated at [default: db.ts]
+          Path where the typescript defintion file will be generated [default: db.ts]
   -c, --config-file-path <CONFIG_FILE_PATH>
           Path to the configuration JSON file
   -h, --help
@@ -120,12 +122,8 @@ export type Tables = Record<string, TableMeta>;
 export type Fields = Record<string, FieldMeta>;
 
 export type TableMeta = {
-  fields: Record<string, FieldMeta>;
+  fields: Fields;
   comment?: string;
-};
-
-export type TableMetaFromDb = TableMeta & {
-  id: string;
 };
 
 export type FieldMeta = {
@@ -149,7 +147,7 @@ export type FieldType =
 
 export namespace FieldTypes {
   export type Simple = {
-    name: "any" | "null" | "boolean" | "string" | "number" | "date" | "bytes";
+    name: "any" | "null" | "boolean" | "string" | "number" | "decimal" | "date" | "duration" | "bytes" | "uuid";
   };
 
   export type Option = {
@@ -207,6 +205,10 @@ export namespace FieldTypes {
     items: FieldType[];
   };
 }
+
+export type TableMetaFromDb = TableMeta & {
+  id: string;
+};
 ```
 
 ## Disclaimer
