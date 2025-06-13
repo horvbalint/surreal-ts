@@ -2,12 +2,8 @@ export type Tables = Record<string, TableMeta>;
 export type Fields = Record<string, FieldMeta>;
 
 export type TableMeta = {
-  fields: Record<string, FieldMeta>;
+  fields: Fields;
   comment?: string;
-};
-
-export type TableMetaFromDb = TableMeta & {
-  id: string;
 };
 
 export type FieldMeta = {
@@ -31,7 +27,7 @@ export type FieldType =
 
 export namespace FieldTypes {
   export type Simple = {
-    name: "any" | "null" | "boolean" | "string" | "number" | "date" | "bytes";
+    name: "any" | "null" | "boolean" | "string" | "number" | "decimal" | "date" | "duration" | "bytes" | "uuid";
   };
 
   export type Option = {
@@ -46,7 +42,7 @@ export namespace FieldTypes {
 
   export type Record = {
     name: "record";
-    table: string;
+    tables: string[];
   };
 
   export type Array = {
@@ -89,3 +85,7 @@ export namespace FieldTypes {
     items: FieldType[];
   };
 }
+
+export type TableMetaFromDb = TableMeta & {
+  id: string;
+};

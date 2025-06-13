@@ -16,11 +16,9 @@
 
 use core::panic;
 use std::collections::BTreeMap;
-use std::fs::File;
-use std::io::BufReader;
 use std::iter;
 
-use clap::{CommandFactory, Parser};
+use clap::CommandFactory;
 use config::Config;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -30,22 +28,17 @@ use surrealdb::sql::{statements::DefineStatement, Query, Statement};
 use surrealdb::{engine::any::Any, opt::auth::Root, Surreal};
 
 use outputs::{db, ts::TSGenerator};
-use surrealdb::syn::parser::Parser as SurrealParser;
+use surrealdb::syn::parser::Parser;
 
 mod config;
 mod outputs;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let mut config = Config::parse();
-    if let Some(path) = &config.config_file_path {
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
-        config = serde_json::from_reader(reader)?
-    };
+    let config = config::get_config()?;
 
     let (Some(namespace), Some(database)) = (&config.namespace, &config.database) else {
-        println!("No 'namespace' or 'database' provided in the config, see the help output for correct usage:\n");
+        eprintln!("No 'namespace' or 'database' provided in the config, see the help output for correct usage:\n");
         Config::command().print_help().ok();
         return Ok(());
     };
@@ -56,7 +49,22 @@ async fn main() -> anyhow::Result<()> {
         password: &config.password,
     })
     .await?;
-    db.use_ns(namespace).use_db(database).await?;
+
+    let root_info: Option<RootInfo> = db.query("INFO FOR ROOT").await?.take(0)?;
+    let root_info = root_info.expect("Failed to get information of the namespaces.");
+    if !root_info.namespaces.contains_key(namespace) {
+        eprintln!("No namespace '{namespace}' found in the connection!");
+        return Ok(());
+    }
+    db.use_ns(namespace).await?;
+
+    let ns_info: Option<NamespaceInfo> = db.query("INFO FOR NS").await?.take(0)?;
+    let ns_info = ns_info.expect("Failed to get information of the databases.");
+    if !ns_info.databases.contains_key(database) {
+        eprintln!("No database '{database}' found in the namespace!");
+        return Ok(());
+    }
+    db.use_db(database).await?;
 
     let table_metas = get_tables_metas_for_db(&mut db).await?;
 
@@ -71,6 +79,16 @@ async fn main() -> anyhow::Result<()> {
     println!("\nAll operations done ✅");
 
     Ok(())
+}
+
+#[derive(Deserialize, Debug)]
+struct RootInfo {
+    namespaces: BTreeMap<String, String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct NamespaceInfo {
+    databases: BTreeMap<String, String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -89,7 +107,7 @@ async fn get_tables_metas_for_db(db: &mut Surreal<Any>) -> anyhow::Result<TableM
     let info: Option<DatabaseInfo> = db.query("INFO FOR DB").await?.take(0)?;
     let info = info.expect("Failed to get information of the database.");
 
-    let every_table = info.tables.into_values().collect::<Vec<_>>().join(";\n");
+    let every_table = info.tables.into_values().join(";\n");
     let result = parse_sql(&every_table);
 
     for stmt in result {
@@ -120,7 +138,7 @@ async fn get_field_metas_for_table(
     let info: Option<TableInfo> = db.query(format!("INFO FOR TABLE {table}")).await?.take(0)?;
     let info = info.expect(&format!("Failed to get information of table {table}."));
 
-    let every_field = info.fields.into_values().collect::<Vec<_>>().join(";\n");
+    let every_field = info.fields.into_values().join(";\n");
     let result = parse_sql(&every_field);
 
     for stmt in result {
@@ -135,7 +153,7 @@ async fn get_field_metas_for_table(
 }
 
 fn parse_sql(sql: &str) -> Query {
-    let mut parser = SurrealParser::new(sql.as_bytes());
+    let mut parser = Parser::new(sql.as_bytes());
     let mut stack = reblessive::Stack::new();
     let result = stack.enter(|ctx| parser.parse_query(ctx)).finish().unwrap();
 
@@ -157,7 +175,7 @@ struct TableMeta {
 #[serde(rename_all = "camelCase")]
 struct FieldMeta {
     r#type: FieldType,
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
     has_default: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     comment: Option<String>,
@@ -172,10 +190,13 @@ enum FieldType {
     Boolean,
     String,
     Number,
+    Decimal,
+    Duration,
+    Uuid,
     Date,
     Bytes,
     Option { inner: Box<FieldType> },
-    Record { table: String },
+    Record { tables: Vec<String> },
     Array { item: Box<FieldType> },
     Object { fields: Option<FieldMetas> },
     Union(Union),
@@ -243,11 +264,14 @@ fn get_field_type<'a>(
         Some(kind) => match kind {
             Kind::Any => FieldType::Any,
             Kind::Null => FieldType::Null,
-            Kind::Bool => FieldType::Boolean,
-            Kind::Decimal | Kind::Float | Kind::Int | Kind::Number => FieldType::Number,
-            Kind::String | Kind::Uuid | Kind::Duration => FieldType::String,
-            Kind::Datetime => FieldType::Date,
+            Kind::Uuid => FieldType::Uuid,
             Kind::Bytes => FieldType::Bytes,
+            Kind::Bool => FieldType::Boolean,
+            Kind::String => FieldType::String,
+            Kind::Datetime => FieldType::Date,
+            Kind::Decimal => FieldType::Decimal,
+            Kind::Duration => FieldType::Duration,
+            Kind::Float | Kind::Int | Kind::Number => FieldType::Number,
             Kind::Option(kind) => {
                 let inner = get_field_type(path, Some(*kind), fields);
                 FieldType::Option { inner: inner.into() }
@@ -267,9 +291,9 @@ fn get_field_type<'a>(
                     FieldType::Object{ fields: Some(subfields) }
                 }
             }
-            Kind::Record(vec) => {
-                let record_interface = vec[0].to_string();
-                FieldType::Record{ table: record_interface }
+            Kind::Record(tables) => {
+                let tables = tables.iter().map(|t| t.to_string()).collect();
+                FieldType::Record{ tables }
             }
             Kind::Either(kinds) => {
                 let variants: Vec<_> = kinds

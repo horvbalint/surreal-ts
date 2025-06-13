@@ -16,6 +16,7 @@ DEFINE FIELD datetime ON schemafull_test TYPE datetime;
 DEFINE FIELD duration ON schemafull_test TYPE duration;
 DEFINE FIELD number ON schemafull_test TYPE number;
 DEFINE FIELD decimal ON schemafull_test TYPE decimal;
+DEFINE FIELD uuid ON schemafull_test TYPE uuid;
 DEFINE FIELD float ON schemafull_test TYPE float;
 DEFINE FIELD int ON schemafull_test TYPE int;
 DEFINE FIELD enum_string ON schemafull_test TYPE "surreal-ts" | "surreal-db";
@@ -35,6 +36,8 @@ DEFINE FIELD literal_object ON schemafull_test TYPE {
   } 
 };
 DEFINE FIELD record ON schemafull_test TYPE record<ref_test>;
+DEFINE FIELD multi_table_record ON schemafull_test TYPE record<ref_test | ref_test2>;
+DEFINE FIELD empty_record ON schemafull_test TYPE record;
 DEFINE FIELD array ON schemafull_test TYPE array;
 DEFINE FIELD array_array1 ON schemafull_test TYPE array<array>;
 DEFINE FIELD record_array ON schemafull_test TYPE array<record<ref_test>>;
@@ -71,6 +74,9 @@ DEFINE FIELD string_with_permission ON schemafull_test TYPE string PERMISSIONS F
 
 DEFINE TABLE ref_test SCHEMAFULL;
 DEFINE FIELD name ON ref_test TYPE string;
+
+DEFINE TABLE ref_test2 SCHEMAFULL;
+DEFINE FIELD name ON ref_test2 TYPE string;
 
 DEFINE TABLE schemaless SCHEMALESS;
 

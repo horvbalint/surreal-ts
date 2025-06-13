@@ -1,6 +1,6 @@
-use surrealdb::{engine::any::Any, Surreal};
+use surrealdb::{Surreal, engine::any::Any};
 
-use crate::{config::Config, TableMeta, TableMetas};
+use crate::{TableMeta, TableMetas, config::Config};
 
 pub async fn store_tables_in_db(
     db: &mut Surreal<Any>,
@@ -11,12 +11,10 @@ pub async fn store_tables_in_db(
     let metadata_table_name = &config.metadata_table_name;
 
     db.query(format!(
-        "
-        REMOVE TABLE {metadata_table_name};
+        "REMOVE TABLE {metadata_table_name};
         DEFINE TABLE {metadata_table_name} SCHEMALESS
             PERMISSIONS
-                FOR select FULL;
-    "
+                FOR select FULL;"
     ))
     .await?;
 
