@@ -16,6 +16,7 @@ DEFINE FIELD datetime ON schemafull_test TYPE datetime;
 DEFINE FIELD duration ON schemafull_test TYPE duration;
 DEFINE FIELD number ON schemafull_test TYPE number;
 DEFINE FIELD decimal ON schemafull_test TYPE decimal;
+DEFINE FIELD uuid ON schemafull_test TYPE uuid;
 DEFINE FIELD float ON schemafull_test TYPE float;
 DEFINE FIELD int ON schemafull_test TYPE int;
 DEFINE FIELD enum_string ON schemafull_test TYPE "surreal-ts" | "surreal-db";

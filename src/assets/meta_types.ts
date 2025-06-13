@@ -31,7 +31,7 @@ export type FieldType =
 
 export namespace FieldTypes {
   export type Simple = {
-    name: "any" | "null" | "boolean" | "string" | "number" | "date" | "bytes";
+    name: "any" | "null" | "boolean" | "string" | "number" | "decimal" | "date" | "duration" | "bytes" | "uuid";
   };
 
   export type Option = {
