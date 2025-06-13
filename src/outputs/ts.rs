@@ -4,9 +4,9 @@ use std::io::Write;
 use convert_case::{Case, Casing};
 use itertools::Itertools;
 
-use crate::{config::Config, Enum, FieldMetas, FieldType, Literal, TableMeta, TableMetas, Union};
+use crate::{Enum, FieldMetas, FieldType, Literal, TableMeta, TableMetas, Union, config::Config};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum Direction {
     In,
     Out,
@@ -90,7 +90,7 @@ impl<'a> TSGenerator<'a> {
 
         for (name, meta) in fields {
             let optional = matches!(meta.r#type, FieldType::Option { .. })
-                || (matches!(direction, Direction::In) && meta.has_default);
+                || (*direction == Direction::In && meta.has_default);
 
             let optional = if optional { "?" } else { "" };
 

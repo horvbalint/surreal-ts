@@ -175,7 +175,7 @@ struct TableMeta {
 #[serde(rename_all = "camelCase")]
 struct FieldMeta {
     r#type: FieldType,
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
     has_default: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     comment: Option<String>,
